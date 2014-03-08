@@ -1,0 +1,18 @@
+{
+  "name": "RS Manager",
+  "main": "rsmanager.html",
+  "description": "Remote Support Tunneling Manager",
+  "version": "0.1.0",
+  "keywords": [ "remote support", "rsproxy" ],
+  "window": {
+    "title": "RS Manager - Loading ...",
+    "icon": "icon.png",
+    //"toolbar": false,
+    "frame": true,
+    "width": 800,
+    "height": 500,
+    "position": "mouse",
+    "min_width": 640,
+    "min_height": 480
+  }
+}

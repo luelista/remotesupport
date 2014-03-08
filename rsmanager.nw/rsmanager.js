@@ -1,0 +1,147 @@
+var net = require('net'),
+    tls = require('tls'),
+    nssocket = require('nssocket'),
+    fs = require('fs'),
+    path = require('path'),
+    os = require('os');
+
+
+var config = require('./config');
+var TunnelProtocol = require('TunnelProtocol').TunnelProtocol;
+
+qqTW={};
+
+var tlsParams = {
+  type: 'tls',
+  cert: fs.readFileSync(config.serverCertFile),
+  ca: fs.readFileSync(config.serverCertFile)
+};
+config.tlsParams = tlsParams;
+var socket = new nssocket.NsSocket({
+  reconnect: true,
+  type: tlsParams.type,
+  cert: tlsParams.cert,
+  ca: tlsParams.ca,
+  host: config.server,
+  port: config.serverPort,
+  retryInterval: 5000,
+  maxRetries: 999999999,
+  retryCalculateInterval: function(t, n) { return t; }
+});
+global.socket=socket;
+/*
+ *...schei§
+ socket.socket.cleartext.pair.on('secure', function(err) {
+  console.log('secure2=',socket.socket.authorized,socket.socket.authorizationError);
+  
+});*/
+
+socket.on('error', function(err) {
+  console.log('socket error:', err);  
+});
+
+socket.on('start', function () {
+  console.log('reconnecting...');
+  document.title = "RS Manager - Connected to "+config.server+":"+config.serverPort;
+});
+
+socket.data(['rsvp', 'please-authenticate'], function() {
+  console.log('Authenticating...');
+  socket.send(['rsvp', 'login-as-admin'], {
+    username: 'administrator',
+    password: '1234'
+  });
+});
+
+
+socket.data(['rsvp', 'error'], function(data) {
+  console.log('Error received: ' + data.type + '\t' + data.reason);
+});
+
+socket.data(['rsvp', 'message'], function(data) {
+  console.log('MESSAGE : ' , data.message);
+});
+
+TunnelProtocol(socket, config);
+
+socket.connect();
+
+function SendHeartbeat() {
+  setTimeout(SendHeartbeat, config.heartbeatInterval * 1000);
+  
+  socket.send(['rsvp', 'heartbeat'], {
+    
+  });
+}
+
+setTimeout(SendHeartbeat, config.heartbeatInterval * 1000);
+
+
+
+
+// Takes an ISO time and returns a string representing how
+// long ago the date represents.
+qqTW.prettyDate=function(time){
+  var date = new Date(typeof time == 'number' ? time : (time || "").replace(/-/g,"/").replace(/[TZ]/g," ")),
+    diff = (((new Date()).getTime() - date.getTime()) / 1000),
+    day_diff = Math.floor(diff / 86400);
+      
+  if ( isNaN(day_diff) || day_diff < 0)
+    return time;
+  if ( day_diff >= 31 )
+    return date.getDate()+"."+(date.getMonth()+1)+"."+date.getFullYear();
+      
+  return day_diff == 0 && (
+      diff < 60 && /*"just now"*/ Math.floor(diff) + " secs ago" ||
+      diff < 120 && "1 minute ago" ||
+      diff < 3600 && Math.floor( diff / 60 ) + " minutes ago" ||
+      diff < 7200 && "1 hour ago" ||
+      diff < 86400 && Math.floor( diff / 3600 ) + " hours ago") ||
+    day_diff == 1 && "Yesterday" ||
+    day_diff < 7 && day_diff + " days ago" ||
+    day_diff < 31 && Math.ceil( day_diff / 7 ) + " weeks ago";
+}
+
+
+
+
+qqTW.prettyTimespan=function(diff){
+  var  day_diff = Math.floor(diff / 86400);
+      
+  if ( isNaN(day_diff) || day_diff < 0)
+    return diff;
+  if ( day_diff >= 31 )
+    return Math.ceil( day_diff / 30 ) + " months";
+      
+  return day_diff == 0 && (
+      diff < 60 && "" + diff + " secs" ||
+      diff < 120 && "1 minute" ||
+      diff < 3600 && Math.floor( diff / 60 ) + " minutes" ||
+      diff < 7200 && "1 hour" ||
+      diff < 86400 && Math.floor( diff / 3600 ) + " hours") ||
+    day_diff == 1 && "1 day" ||
+    day_diff < 7 && day_diff + " days" ||
+    day_diff < 31 && Math.ceil( day_diff / 7 ) + " weeks";
+}
+
+
+
+
+
+
+
+var gui = require('nw.gui');
+var mainMenu = new gui.Menu({ type: 'menubar' });
+gui.Window.get().menu = mainMenu;
+
+var menu = new gui.Menu();
+mainMenu.append(
+    new gui.MenuItem({
+        label: 'Custom Menu',
+        submenu: menu
+    })
+);
+menu.append(new gui.MenuItem({ label: 'Item B' }));
+menu.append(new gui.MenuItem({ type: 'separator' }));
+menu.append(new gui.MenuItem({ label: 'Item C' }));
+
