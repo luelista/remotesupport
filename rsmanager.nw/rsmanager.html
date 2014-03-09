@@ -2,16 +2,20 @@
 <html>
   <head>
     <title>RS Manager - Initializing ...</title>
+    <link rel="stylesheet" type="text/css" href="extjs/resources/css/ext-all-neptune.css">
+    <script type="text/javascript" src="extjs/ext-debug.js"></script>
+    <script type="text/javascript" src="extjs/ext-theme-neptune.js"></script>
     <script src="jquery-1.10.2.min.js"></script>
     <script src="rsmanager.js"></script>
+    <script src="gui.js"></script>
     <style>
       @import url(finder-sidebar.css);
       body,td { font: caption; }
       html,body { margin: 0; padding: 0; overflow: hidden; }
       header { background: #eeffee; color: #336633; padding: 10px; border-bottom: 1px solid #336633; height: 39px; }
       header h1 { margin: 0; padding: 0; display: inline-block; }
-      #mainArea { position: absolute; left: 201px; top: 60px; overflow: scroll; }
-      #sidebar { position: absolute; top: 60px; left: 0; width: 200px; height :100%; }
+      #mainArea {  overflow: scroll; }
+      #sidebar {  height :100%; }
       section.padded { padding: 10px; }
       #mainArea section { display: none; } #mainArea section.current { display: block; }
       section .console { background: #333; color: #eee; padding: 10px; font: 10pt monospace; white-space: pre-wrap;  }
@@ -29,7 +33,7 @@
       ctxMenu.append(new gui.MenuItem({label:"Create Tunnel to...",click:onCreateTunnel}));
       ctxMenu.append(new gui.MenuItem({label:"Open Shell Connection",click:onOpenShellConnection}));
       ctxMenu.append(new gui.MenuItem({label:"Open VNC Connection",click:onOpenVncConnection}));
-      
+
       $(window).resize(function() {
         $("#mainArea,#sidebar").css('height', $(window).height()-60+'px');
         $("#mainArea").css('width',$(window).width()-201+'px')
@@ -41,15 +45,15 @@
           $("#mainArea #"+$(this).attr('data-target')).addClass("current"); $(this).addClass("cur");
         });
       });
-      
+
       function appendConsole(txt) {
         $("#logConsoleOut").append(''+txt.replace(/</g,'&lt;'));
       }
-      
+
       function appendConsoleTitle(txt) {
         $("#logConsoleOut").append('\n<b>'+txt+'</b>\n');
       }
-      
+
       function onSendMessage() {
         var clientid = currentItemId
         var msg=prompt("Message to "+clientid);
@@ -74,7 +78,7 @@
         }
       }
       function onCreateTunnel() {
-        
+
       }
       function onOpenShellConnection() {
         var clientid = currentItemId
@@ -87,12 +91,12 @@
           case 'Windows_NT':require('child_process').spawn('cmd.exe', ['/c','start cmd.exe /k nc 127.0.0.1 4733'], {detached:true}); break;
           case 'Darwin':require('child_process').spawn('/usr/bin/osascript', ['-e','tell application "Terminal" to do script with command "sleep 1; nc 127.0.0.1 4733"']);break;
         }
-        
+
         //
       }
-      
+
       var currentItem;
-      
+
       socket.data(['rsvp', 'message'], function(data) {
         alert("Message from #"+data.fromId+" ("+data.fromAddress+"):\n\n"+data.message);
       });
@@ -114,7 +118,7 @@
             var $tr = $(this).closest("tr").addClass("currentItem");
             currentItemId = $tr.attr("clientid");
             //
-            
+
           })
           .contextmenu(function(e) {
             e.preventDefault();
@@ -130,7 +134,7 @@
         socket.send(['rsvp', 'admin', 'list-connections']);
       }
       setInterval(listCons, 5000);
-      
+
       socket.data(['rsvp', 'login-successful'], function(data) {
         document.title = "RS Manager - Authenticated #" + data.yourId + " as " +config.username+" on "+config.server+":"+config.serverPort;
         qqTW.myClientId = data.yourId;
@@ -141,17 +145,17 @@
     </script>
   </head>
   <body>
-    <header>
+    <!--<header>
       <img src="images/connect_no.png" id="connection_icon">
       <h1>RS Manager</h1>
       We are using node.js <script>document.write(process.version)</script>.
-      <!--
+      <!- -
       <button onclick="listCons()" title="Refresh List Clients"><img src='images/reload.png'></button>
-      -->
+      - ->
       <button onclick="onOpenShellConnection()"><img src='images/utilities_terminal.png'>Shell Con.</button>
       <button onclick="onOpenVncConnection()"><img src='images/krdc.png'>VNC</button>
-        
-    </header>
+
+    </header>-->
     <div id="sidebar" class="finder-sidebar">
       <h2>Lists <input type="button" onclick="listCons()" value="Refresh"></h2>
       <ul id="mainmenu">
@@ -159,16 +163,16 @@
       <li>Client Management</li>
       <li data-target="main_openStreams">All Connections</li>
       </ul>
-      
+
       <h2>Terminal</h2>
       <ul>
       <li data-target="main_logConsole">Log Console</li>
       </ul>
-      
+
       <h2>Running Commands</h2>
       <ul>
       </ul>
-      
+
     </div>
     <div id="mainArea">
       <section id="main_conList" class="padded current">

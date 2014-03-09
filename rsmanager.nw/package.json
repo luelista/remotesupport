@@ -7,7 +7,7 @@
   "window": {
     "title": "RS Manager - Loading ...",
     "icon": "icon.png",
-    //"toolbar": false,
+    "toolbar": false,
     "frame": true,
     "width": 800,
     "height": 500,
