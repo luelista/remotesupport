@@ -123,7 +123,7 @@ ClientHandler.prototype.onMultiplexConnection = function(connection) {
       connection.pipe(downstream).pipe(connection);
     }.bind(this)).on('error', function(error) {
       this.sendMessage('on_forward_error', ''+error);
-    });
+    }.bind(this));
   }
 }
 
