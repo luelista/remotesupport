@@ -278,12 +278,13 @@ function listHosts() {
 
 function createForwardIn() {
   connect();
+  var lfd_nr = 1;
   conn.on('connected', function() {
     var id = +args[1], localPort = +args[2], remotePort = +args[3], remoteHost = args[4] || "127.0.0.1";
     if (!id || !localPort || !remotePort) { displayHelp(); return; }
     var server = net.createServer(function(stream) {
       var upstream = conn.multiplex.connect({
-        id: ':'+id+':forwardOut:'+remoteHost+':'+remotePort
+        id: ':'+id+':forwardOut:'+remoteHost+':'+remotePort+':'+(++lfd_nr)
       }, function() {
         upstream.pipe(stream).pipe(upstream);
         console.log("forward stream created");

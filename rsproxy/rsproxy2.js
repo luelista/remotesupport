@@ -15,7 +15,7 @@ global.app = app;
 app.configDir = process.env.RS_DIR || "/tmp/rs";
 try {
   app.config = JSON.parse(fs.readFileSync(app.configDir+'/config.json').toString().replace(/^\s*\/\/.*$/gm,""));
-} catch(e) { console.log("Unable to read config from "+configDir+'/config.json'+": ",e); return; }
+} catch(e) { console.log("Unable to read config from "+app.configDir+'/config.json'+": ",e); return; }
 if(app.config.adminNetmask) app.config.adminNetmask = new Netmask(app.config.adminNetmask);
 
 app.db = require('./database')
