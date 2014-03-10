@@ -6,14 +6,19 @@ var net = require('net'),
     fs = require('fs'),
     pem = require('pem'),
     rsproto = require('rsproto'),
-    readline = require('readline');
+    readline = require('readline'),
+    asciitable = require('ascii-table');
 var Netmask = require('netmask').Netmask;
 
-var serverHost = process.env.RS_HOST || "127.0.0.1";
-var serverPort = process.env.RS_PORT || 4711;
 var configDir = process.env.RS_DIR || "/tmp/rs";
+var config = rsproto.loadConfig(configDir + '/config.json');
 
-var country = "DE", organization = "Teamwiki.de Remote Support";
+var serverHost = process.env.RS_HOST || config.proxy_host || "127.0.0.1";
+var serverPort = process.env.RS_PORT || config.proxy_port || 4711;
+
+var certCountry = config.certificate_country || "DE",
+    certState = config.certificate_state || "",
+    certOrganization = config.certificate_organization || "Acme Remote Support";
 
 var args = process.argv.slice(2);
 var conn = null;
@@ -32,25 +37,30 @@ function connect() {
 function displayHelp() {
   var helpText = "Usage: rsctl command [options]\n\n\
 Commands:\n\
+  hosts        list all connected hosts\n\
+  forward      open a tcp tunnel\n\
   keygen       generate client keys\n\
   configure    interactively prompt for config\n\
   serverkeygen Generate keys and certs for CA and server\n\
   fetchca      fetch the ca certificate and save to config dir\n\
   mancsr       manage certificate signing requests\n\
-  testcon      test the connection\n\n";
+  testcon      test the connection\n\n\
+rsctl forward <hostID> <localListenerPort> <remoteConnectPort> [<remoteConnectIP>]\n\n\
+rsctl serverkeygen <hostname>\n\n\
+rsctl keygen <hostname> [admin]\n\n";
   console.log(helpText);
 }
 
 function generateKeys() {
   var ou = "Remote Support";
   if (args.length > 2 && args[2] == "admin") {
-    ou = "ADMIN";
+    ou = config.adminOU;
   }
   pem.createCSR({
-    keyBitsize: (ou == "ADMIN") ? 4096 : 1024,
-    country: country,
-    state: "",
-    organization: organization,
+    keyBitsize: (ou == config.adminOU) ? 4096 : 1024,
+    country: certCountry,
+    state: certState,
+    organization: certOrganization,
     organizationUnit: ou,
     commonName: args[1]
   }, function(error, result) {
@@ -100,9 +110,9 @@ function generateServerKey() {
   }
   pem.createCertificate({
     keyBitsize: 4096,
-    country: country,
-    state: "",
-    organization: organization,
+    country: certCountry,
+    state: certState,
+    organization: certOrganization,
     organizationUnit: ou,
     commonName: args[1],
     serviceKey: fs.readFileSync(caKey),
@@ -121,9 +131,9 @@ function generateServerKey() {
 
     pem.createCertificate({
       keyBitsize: 4096,
-      country: country,
-      state: "",
-      organization: organization,
+      country: certCountry,
+      state: certState,
+      organization: certOrganization,
       organizationUnit: "ADMIN",
       commonName: "Sys-Admin",
       serviceKey: fs.readFileSync(caKey),
@@ -175,6 +185,9 @@ function testConnection() {
 function manageCSR() {
   connect();
   conn.on('connected', function() {
+    conn.on('msg:read_certs:on_new_csr', function(d) {
+      console.log("You got a new CSR #"+d.id+".");
+    });
     conn.sendMessage("admin:get_hosts", {}, function(err, hosts) {
       if (err) { console.log("ERROR:",err); conn.close(); return; }
 
@@ -186,10 +199,12 @@ function manageCSR() {
       var sel = null, csr = null, act = false;
       var cmds = {
         list: function(next) {
+          var tab = new asciitable().setHeading('ID', 'Auth', 'IP Address', 'CN', 'OU', 'Details'); tab.removeBorder();
           for(var i in hosts) {
             var c = hosts[i];
-            console.log("[" + c.id + "]\t" + c.auth + "\t" + c.address + "\t" + c.cn + "\t" + c.ou + "\t" + (c.pendingCSR ? "<PENDING CSR>" : ""));
+            tab.addRow(c.id, c.auth, c.address, c.cn, c.ou, (c.pendingCSR ? "<PENDING CSR>" : ""));
           }
+          console.log(tab.toString());
           next();
         },
         detail: function(next) {
@@ -227,7 +242,7 @@ function manageCSR() {
       function doo(cmd, next) {
         if (cmds[cmd])  { cmds[cmd](next); act = true; }
         else if (cmd.match(/^[0-9]+$/)) { sel = +cmd; cmds.detail(next); }
-        else { console.log("invalid command. possible commands: list, detail, <number>, accept, reject, exit "); act = true; next(); }
+        else { console.log("invalid command. possible commands: list, detail, <id>, accept, reject, exit "); act = true; next(); }
       }
       if (args.length > 1) {
         for (var i = 1; i<args.length; i++)
@@ -243,6 +258,40 @@ function manageCSR() {
       rl.prompt();
 
     });
+  });
+}
+
+function listHosts() {
+  connect();
+  conn.on('connected', function() {
+    conn.sendMessage("admin:get_hosts", {}, function(err, hosts) {
+      var tab = new asciitable().setHeading('ID', 'Auth', 'IP Address', 'CN', 'OU', 'Details'); tab.removeBorder();
+      for(var i in hosts) {
+        var c = hosts[i];
+        tab.addRow(c.id, c.auth, c.address, c.cn, c.ou, (c.pendingCSR ? "<PENDING CSR>" : "") + (c.self ? "<SELF>" : ""));
+      }
+      console.log(tab.toString());
+      conn.close();
+    });
+  });
+}
+
+function createForwardIn() {
+  connect();
+  conn.on('connected', function() {
+    var id = +args[1], localPort = +args[2], remotePort = +args[3], remoteHost = args[4] || "127.0.0.1";
+    if (!id || !localPort || !remotePort) { displayHelp(); return; }
+    var server = net.createServer(function(stream) {
+      var upstream = conn.multiplex.connect({
+        id: ':'+id+':forwardOut:'+remoteHost+':'+remotePort
+      }, function() {
+        upstream.pipe(stream).pipe(upstream);
+        console.log("forward stream created");
+      }.bind(this)).on('error', function(error) {
+        // timeouts and other errors resulting from connect requests
+        console.log("multiplex connection error!");
+      });
+    }).listen(localPort);
   });
 }
 
@@ -268,6 +317,9 @@ function dispatcher() {
     break;
   case "serverkeygen":
     generateServerKey();
+    break;
+  case "forward":
+    createForwardIn();
     break;
   default:
     displayHelp();

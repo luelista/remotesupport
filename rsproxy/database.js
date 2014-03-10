@@ -13,7 +13,8 @@ var Certificate = sequelize.define('User', {
   id: { type: Sequelize.INTEGER, primaryKey: true, autoIncrement: true },
   commonName: Sequelize.STRING,
   ou: Sequelize.STRING,
-  fingerprint: Sequelize.STRING
+  fingerprint: Sequelize.STRING,
+  comment: Sequelize.STRING
 });
 
 var ManagedHosts = sequelize.define('ManagedHosts', {

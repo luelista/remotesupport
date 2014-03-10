@@ -10,7 +10,12 @@ Plugin("admin", "0.0.1", function(App) {
       var hosts = [];
       for (var i in App.connections) {
         var host = App.connections[i];
-        hosts.push(_.extend({ id: host.id, pendingCSR: host.pendingCSR?true:false, auth: host.authState }, host.hostInfo));
+        hosts.push(
+          _.extend({
+            id: host.id,  self: host==handler,
+            pendingCSR: host.pendingCSR?true:false,
+            auth: host.authState
+          }, host.hostInfo));
       }
       next(null, hosts);
     };

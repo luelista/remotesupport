@@ -15,7 +15,7 @@ Plugin("read_certs", "0.0.1", function(App) {
   App.on('connection', function(handler) {
     handler.messenger["read_certs:read_ca_cert"] = function(type, data, next) {
       //fs.readFile(App.configDir+"/ca/rs-ca.crt", function(err, results) {
-      next(err, { caCert: serviceCertificate.toString() });
+      next(null, { caCert: serviceCertificate.toString() });
       //});
     };
     handler.messenger["read_certs:read_my_cert"] = function(type, data, next) {
@@ -36,7 +36,7 @@ Plugin("read_certs", "0.0.1", function(App) {
           });
         });
       } else if (data && data.commonName && data.ou && data.ou != App.config.adminOU) {
-        storeCSR({ commonName: data.commonName, ou: data.ou, modulus: "", pem: "" }, next);
+        storeCSR({ commonName: data.commonName, organizationUnit: data.ou, modulus: "", pem: "" }, next);
       } else {
         next("missing parameters", null);
       }
@@ -44,6 +44,7 @@ Plugin("read_certs", "0.0.1", function(App) {
 
     function storeCSR(info, next) {
       //App.db.CSR.build(
+
       handler.pendingCSR = {
         commonName: info.commonName,
         ou: info.organizationUnit,
@@ -51,14 +52,11 @@ Plugin("read_certs", "0.0.1", function(App) {
         pem: info.pem,
         remoteEndpoint: handler.hostInfo.address
       };
-      /*).save().complete(function(err, csr) {
-        if (!!err) {
-          console.log('The instance has not been saved:', err)
-        } else {
-          console.log('We have a persisted instance now')
-        }*/
-        next(null, { id: handler.id });
-      //});
+
+      App.broadcastMessage(App.filterAuthState('admin'),
+        'read_certs:on_new_csr', {id: handler.id});
+
+      next(null, { id: handler.id });
     }
 
 

@@ -13,7 +13,9 @@ var app = new App();
 global.app = app;
 
 app.configDir = process.env.RS_DIR || "/tmp/rs";
-app.config = require(app.configDir+'/rs-server-config');
+try {
+  app.config = JSON.parse(fs.readFileSync(app.configDir+'/config.json').toString().replace(/^\s*\/\/.*$/gm,""));
+} catch(e) { console.log("Unable to read config from "+configDir+'/config.json'+": ",e); return; }
 if(app.config.adminNetmask) app.config.adminNetmask = new Netmask(app.config.adminNetmask);
 
 app.db = require('./database')
@@ -28,8 +30,25 @@ App.prototype.runPlugins = function(){
   }
 }
 fs.readdirSync("./plugins").forEach(function(file) {
-  require("./plugins/" + file);
+  if (file.match(/\.js$/)) require("./plugins/" + file);
 });
+App.prototype.broadcastMessage = function(filter, mtype, mdata) {
+  for(var i in app.connections) {
+    var conn = app.connections[i];
+    if (filter(conn)) conn.sendMessage(mtype, mdata);
+  }
+}
+App.prototype.filterAuthState = function(fvalue) {
+  return (function(conn) {
+    return conn.authState == fvalue;
+  });
+}
+App.prototype.getConnectionById = function(id) {
+  for(var i in this.connections) {
+    if (this.connections[i].id == id) return this.connections[i];
+  }
+  return null;
+}
 
 app.connections = [];
 app.idCounter = 1;
@@ -69,10 +88,10 @@ var ClientHandler = function(cleartextStream) {
     this.hostInfo.connectionTimestamp = +new Date();
     this.sequenceCallback = {};
     this.messenger = {};
-    var downstreamMultiplex = new MultiplexStream(app.multiplex_options, function(downstreamConnection) {
+    this.multiplex = new MultiplexStream(app.multiplex_options, function(downstreamConnection) {
         self.onMultiplexConnection(downstreamConnection);
     });
-    cleartextStream.pipe(downstreamMultiplex).pipe(cleartextStream);
+    cleartextStream.pipe(this.multiplex).pipe(cleartextStream);
     cleartextStream.on('close', function() {
       var index = app.connections.indexOf(this);
       if (index > -1) app.connections.splice(index, 1);
@@ -85,11 +104,22 @@ ClientHandler.prototype.onControlConnection =
 ClientHandler.prototype.onMultiplexConnection = function(connection) {
   // a multiplexed stream has connected from upstream.
   // The assigned id will be accessible as downstreamConnection.id
-  switch(connection.id) {
-  case "\"ctrl":
+  if (connection.id == '"ctrl') {
     this.controlConnection = connection;
     this.onControlConnection(connection);
-    break;
+  }
+  var m;
+  if (this.authState == 'admin' && (m = connection.id.match(/^:([0-9]+):(.*)$/))) {
+    var conn = app.getConnectionById(m[1]);
+    var downstream = conn.multiplex.connect({
+      // optionally specify an id for the stream. By default
+      // a v1 UUID will be assigned as the id for anonymous streams
+      id: m[2]
+    }, function() {
+      connection.pipe(downstream).pipe(connection);
+    }.bind(this)).on('error', function(error) {
+      this.sendMessage('on_forward_error', ''+error);
+    });
   }
 }
 
@@ -108,7 +138,7 @@ tls.createServer(app.tls_options, function (cleartextStream) {
     var handler = new ClientHandler(cleartextStream);
     app.connections.push(handler);
     app.emit('connection', handler);
-}).listen(app.config.serverPort)
+}).listen(app.config.server_port || 4711)
 .on('clientError', function(err, pair) {
   console.log("clientError", err);
 });

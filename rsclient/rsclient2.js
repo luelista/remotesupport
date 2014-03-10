@@ -8,11 +8,11 @@ var net = require('net'),
     readline = require('readline');
 var Netmask = require('netmask').Netmask;
 
-var serverHost = process.env.RS_HOST || "127.0.0.1";
-var serverPort = process.env.RS_PORT || 4711;
 var configDir = process.env.RS_DIR || "/tmp/rs";
+var config = rsproto.loadConfig(configDir + '/config.json');
 
-var country = "DE", organization = "Teamwiki.de Remote Support";
+var serverHost = process.env.RS_HOST || config.proxy_host || "127.0.0.1";
+var serverPort = process.env.RS_PORT || config.proxy_port || 4711;
 
 var args = process.argv.slice(2);
 var conn = null;
