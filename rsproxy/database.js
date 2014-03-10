@@ -9,10 +9,19 @@ var sequelize = new Sequelize('database', 'username', 'password', {
   storage: app.configDir+'/rs-server.sqlite'
 });
 
-var User = sequelize.define('User', {
-  username: Sequelize.STRING,
-  password: Sequelize.STRING
+var Certificate = sequelize.define('User', {
+  id: { type: Sequelize.INTEGER, primaryKey: true, autoIncrement: true },
+  commonName: Sequelize.STRING,
+  ou: Sequelize.STRING,
+  fingerprint: Sequelize.STRING
+});
+
+var ManagedHosts = sequelize.define('ManagedHosts', {
+    status: Sequelize.STRING,
+    permission: Sequelize.STRING
 })
+
+Certificate.hasMany(Certificate, { through: ManagedHosts });
 
 var CSR = sequelize.define('CSR', {
   id: { type: Sequelize.INTEGER, primaryKey: true, autoIncrement: true },
@@ -27,7 +36,8 @@ var CSR = sequelize.define('CSR', {
 
 sequelize
 //.authenticate()
-.sync()//({ force: true })
+.sync()
+//.sync({ force: true })
 .complete(function(err) {
   if (!!err) {
     console.log('Unable to connect to the database:', err)
@@ -38,5 +48,6 @@ sequelize
 
 
 exports.sequelize = sequelize;
-exports.User = User;
+exports.Certificate = Certificate;
+exports.ManagedHosts = ManagedHosts;
 exports.CSR = CSR;

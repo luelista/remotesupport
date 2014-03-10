@@ -4,13 +4,15 @@ var fs = require('fs'),
 
 Plugin("admin", "0.0.1", function(App) {
   App.on('connection', function(handler) {
+    if (handler.authState != 'admin') return;
+
     handler.messenger["admin:get_hosts"] = function(type, data, next) {
       var hosts = [];
       for (var i in App.connections) {
         var host = App.connections[i];
-        hosts.push(_.extend({}, host.hostInfo));
+        hosts.push(_.extend({ id: host.id, pendingCSR: host.pendingCSR?true:false, auth: host.authState }, host.hostInfo));
       }
-      next(null, extend({ id: handler.id, auth: handler.authState }, handler.hostInfo));
+      next(null, hosts);
     };
 
   });

@@ -70,7 +70,16 @@ function generateKeys() {
       conn.sendMessage("read_certs:put_csr", { pem: result.csr }, function(err, putres) {
         if (err) console.log("ERROR: Unable to put csr on server. ",err);
         else console.log("OK: your CSR was sent to server and store as #"+putres.id+"\nyou might want to do this as admin now:\n  rsctl mancsr "+putres.id);
-        conn.close();
+        conn.once("msg:read_certs:on_csr_accepted", function(accept) {
+          if (accept) {
+            console.log("Your CSR was accepted. This host is now registered.");
+            fs.writeFileSync(configDir+"/rsctl.crt", accept.certificate);
+            console.log("certificate written to "+configDir+"/rsctl.crt");
+          } else {
+            console.log("Your CSR was rejected.");
+          }
+          conn.close();
+        })
       });
     });
   });
@@ -166,7 +175,7 @@ function testConnection() {
 function manageCSR() {
   connect();
   conn.on('connected', function() {
-    conn.sendMessage("read_certs:get_csr", {}, function(err, results) {
+    conn.sendMessage("admin:get_hosts", {}, function(err, hosts) {
       if (err) { console.log("ERROR:",err); conn.close(); return; }
 
       var rl = readline.createInterface({
@@ -174,26 +183,39 @@ function manageCSR() {
         output: process.stdout
       });
 
-      var sel = null, act = false;
+      var sel = null, csr = null, act = false;
       var cmds = {
         list: function(next) {
-          for(var i in results.csr) {
-            var c = results.csr[i];
-            console.log("[" + i + "]\t" + c.id + "\t" + c.commonName + "\t" + c.ou);
+          for(var i in hosts) {
+            var c = hosts[i];
+            console.log("[" + c.id + "]\t" + c.auth + "\t" + c.address + "\t" + c.cn + "\t" + c.ou + "\t" + (c.pendingCSR ? "<PENDING CSR>" : ""));
           }
           next();
         },
         detail: function(next) {
           if (sel==null) { console.log("Please select CSR first."); next(); return; }
-          var c = results.csr[sel];
-          for(var k in c) console.log(k, ': ', c[k]);
-          next();
+          conn.sendMessage("read_certs:csr_action", {id: sel, action:'get'}, function(err,results) {
+            if (err) console.log("ERROR:",err);
+            else {
+              csr = results;
+              for(var k in csr) console.log(k, ': ', csr[k]);
+            }
+            next();
+          });
         },
         accept: function(next) {
           if (sel==null) { console.log("Please select CSR first."); next(); return; }
-          conn.sendMessage("read_certs:accept_csr", {id: results.csr[sel].id}, function(err,results) {
+          conn.sendMessage("read_certs:csr_action", {id: sel, action:'accept'}, function(err,results) {
             if (err) console.log("ERROR:",err);
             else console.log("CSR accepted.");
+            next();
+          });
+        },
+        reject: function(next) {
+          if (sel==null) { console.log("Please select CSR first."); next(); return; }
+          conn.sendMessage("read_certs:csr_action", {id: sel, action:'reject'}, function(err,results) {
+            if (err) console.log("ERROR:",err);
+            else console.log("CSR rejected.");
             next();
           });
         },
@@ -204,8 +226,8 @@ function manageCSR() {
       }
       function doo(cmd, next) {
         if (cmds[cmd])  { cmds[cmd](next); act = true; }
-        else if (cmd.match(/^[0-9]+$/) && results.csr[+cmd]) { sel = +cmd; next(); }
-        else { console.log("invalid command. possible commands: list, detail, <number>, exit "); act = true; next(); }
+        else if (cmd.match(/^[0-9]+$/)) { sel = +cmd; cmds.detail(next); }
+        else { console.log("invalid command. possible commands: list, detail, <number>, accept, reject, exit "); act = true; next(); }
       }
       if (args.length > 1) {
         for (var i = 1; i<args.length; i++)
@@ -234,6 +256,9 @@ function dispatcher() {
     break;
   case "testcon":
     testConnection();
+    break;
+  case "hosts":
+    listHosts();
     break;
   case "fetchca":
     fetchCA();
