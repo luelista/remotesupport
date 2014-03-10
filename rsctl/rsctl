@@ -1,0 +1,252 @@
+#!/usr/bin/env node
+
+var net = require('net'),
+    MultiplexStream = require('multiplex-stream'),
+    tls = require('tls'),
+    fs = require('fs'),
+    pem = require('pem'),
+    rsproto = require('rsproto'),
+    readline = require('readline');
+var Netmask = require('netmask').Netmask;
+
+var serverHost = process.env.RS_HOST || "127.0.0.1";
+var serverPort = process.env.RS_PORT || 4711;
+var configDir = process.env.RS_DIR || "/tmp/rs";
+
+var country = "DE", organization = "Teamwiki.de Remote Support";
+
+var args = process.argv.slice(2);
+var conn = null;
+
+function connect() {
+  var crtPath = configDir+"/rsctl.crt";
+  if (!fs.existsSync(crtPath)) crtPath = null;
+  var caCertPath = configDir+"/rsctl-ca.crt";
+  if (!fs.existsSync(caCertPath)) caCertPath = null;
+  conn = new rsproto(serverHost, serverPort, false, configDir+"/rsctl.key", crtPath, caCertPath);
+  conn.on('connected', function() {
+
+  })
+}
+
+function displayHelp() {
+  var helpText = "Usage: rsctl command [options]\n\n\
+Commands:\n\
+  keygen       generate client keys\n\
+  configure    interactively prompt for config\n\
+  serverkeygen Generate keys and certs for CA and server\n\
+  fetchca      fetch the ca certificate and save to config dir\n\
+  mancsr       manage certificate signing requests\n\
+  testcon      test the connection\n\n";
+  console.log(helpText);
+}
+
+function generateKeys() {
+  var ou = "Remote Support";
+  if (args.length > 2 && args[2] == "admin") {
+    ou = "ADMIN";
+  }
+  pem.createCSR({
+    keyBitsize: (ou == "ADMIN") ? 4096 : 1024,
+    country: country,
+    state: "",
+    organization: organization,
+    organizationUnit: ou,
+    commonName: args[1]
+  }, function(error, result) {
+    if (error) {
+      console.log(error);
+      return;
+    }
+    fs.writeFileSync(configDir+"/rsctl.key", result.clientKey);
+    fs.writeFileSync(configDir+"/rsctl.csr", result.csr);
+    console.log("successfully created key and csr");
+    console.log("trying to send this csr to server now:");
+    console.log(result.csr);
+
+    connect();
+
+    conn.on("connected", function() {
+      conn.sendMessage("read_certs:put_csr", { pem: result.csr }, function(err, putres) {
+        if (err) console.log("ERROR: Unable to put csr on server. ",err);
+        else console.log("OK: your CSR was sent to server and store as #"+putres.id+"\nyou might want to do this as admin now:\n  rsctl mancsr "+putres.id);
+        conn.close();
+      });
+    });
+  });
+}
+
+function generateServerKey() {
+  var ou = "Remote Support";
+  try{ fs.mkdirSync(configDir+"/ca"); }catch(e) {}
+  try{ fs.mkdirSync(configDir+"/default-admin"); }catch(e) {}
+  var caKey = configDir+"/ca/rs-ca.key";
+  var caCert = configDir+"/ca/rs-ca.crt";
+  if (!fs.existsSync(caKey)) {
+    console.log("please generate ca key ("+caKey+") and cert first!");
+    console.log("  cd "+configDir+"/ca/");
+    console.log("  openssl genrsa -aes128 -out rs-ca.key 4096");
+    console.log("  openssl req -new -x509 -days 3650 -key rs-ca.key -out rs-ca.crt");
+    return;
+  }
+  pem.createCertificate({
+    keyBitsize: 4096,
+    country: country,
+    state: "",
+    organization: organization,
+    organizationUnit: ou,
+    commonName: args[1],
+    serviceKey: fs.readFileSync(caKey),
+    serviceCertificate: fs.readFileSync(caCert),
+    serial: 10001
+  }, function(error, result) {
+    if (error) {
+      console.log(error);
+      return;
+    }
+    fs.writeFileSync(configDir+"/rs-server.key", result.clientKey);
+    fs.writeFileSync(configDir+"/rs-server.crt", result.certificate);
+    fs.writeFileSync(configDir+"/ca/rs-server.csr", result.csr);
+    console.log("successfully created SERVER key and cert");
+
+
+    pem.createCertificate({
+      keyBitsize: 4096,
+      country: country,
+      state: "",
+      organization: organization,
+      organizationUnit: "ADMIN",
+      commonName: "Sys-Admin",
+      serviceKey: fs.readFileSync(caKey),
+      serviceCertificate: fs.readFileSync(caCert),
+      serial: 10001
+    }, function(error, result) {
+      if (error) {
+        console.log(error);
+        return;
+      }
+      fs.writeFileSync(configDir+"/default-admin/rsctl.key", result.clientKey);
+      fs.writeFileSync(configDir+"/default-admin/rsctl.crt", result.certificate);
+      fs.writeFileSync(configDir+"/ca/default-admin.csr", result.csr);
+      console.log("successfully created DEFAULT ADMIN key and cert\nuse with\n  RS_DIR=\""+configDir+"/default-admin\" rsctl testcon");
+    });
+
+  });
+}
+
+function fetchCA() {
+  connect();
+  conn.on('connected', function() {
+    conn.sendMessage("read_certs:read_ca_cert", {}, function(err, data) {
+      if (err) {
+        console.log("Error:",err); return;
+      }
+      console.log("CA Certificate:");
+      console.log(data.caCert);
+      fs.writeFileSync(configDir+'/rsctl-ca.crt', data.caCert);
+      console.log('CA cert written to file '+configDir+'/rsctl-ca.crt');
+      conn.close();
+    });
+  })
+}
+
+function testConnection() {
+  connect();
+  conn.on('connected', function() {
+    conn.sendMessage("hello:who_am_i", {world:"!"}, function(err, data) {
+      if (err) console.log("ERROR: ",err);
+      for(var k in data) {
+        console.log(k, ': ', data[k]);
+      }
+      conn.close();
+    });
+  })
+}
+
+function manageCSR() {
+  connect();
+  conn.on('connected', function() {
+    conn.sendMessage("read_certs:get_csr", {}, function(err, results) {
+      if (err) { console.log("ERROR:",err); conn.close(); return; }
+
+      var rl = readline.createInterface({
+        input: process.stdin,
+        output: process.stdout
+      });
+
+      var sel = null, act = false;
+      var cmds = {
+        list: function(next) {
+          for(var i in results.csr) {
+            var c = results.csr[i];
+            console.log("[" + i + "]\t" + c.id + "\t" + c.commonName + "\t" + c.ou);
+          }
+          next();
+        },
+        detail: function(next) {
+          if (sel==null) { console.log("Please select CSR first."); next(); return; }
+          var c = results.csr[sel];
+          for(var k in c) console.log(k, ': ', c[k]);
+          next();
+        },
+        accept: function(next) {
+          if (sel==null) { console.log("Please select CSR first."); next(); return; }
+          conn.sendMessage("read_certs:accept_csr", {id: results.csr[sel].id}, function(err,results) {
+            if (err) console.log("ERROR:",err);
+            else console.log("CSR accepted.");
+            next();
+          });
+        },
+        exit: function(next) {
+          conn.close();
+          rl.close();
+        }
+      }
+      function doo(cmd, next) {
+        if (cmds[cmd])  { cmds[cmd](next); act = true; }
+        else if (cmd.match(/^[0-9]+$/) && results.csr[+cmd]) { sel = +cmd; next(); }
+        else { console.log("invalid command. possible commands: list, detail, <number>, exit "); act = true; next(); }
+      }
+      if (args.length > 1) {
+        for (var i = 1; i<args.length; i++)
+          doo(args[i], function() {});
+        if (act) { conn.close(); rl.close(); return; }
+      }
+
+      rl.setPrompt('> ');
+      rl.on('line', function(line) {
+        doo(line, function(){ rl.prompt(); });
+      });
+      rl.on('close', function() { conn.close(); console.log("Bye.") });
+      rl.prompt();
+
+    });
+  });
+}
+
+function dispatcher() {
+  switch(args[0] || "") {
+  case "keygen":
+    generateKeys();
+    break;
+  case "configure":
+    doConfiguration();
+    break;
+  case "testcon":
+    testConnection();
+    break;
+  case "fetchca":
+    fetchCA();
+    break;
+  case "mancsr":
+    manageCSR();
+    break;
+  case "serverkeygen":
+    generateServerKey();
+    break;
+  default:
+    displayHelp();
+  }
+}
+
+dispatcher();
