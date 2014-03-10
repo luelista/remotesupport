@@ -111,6 +111,10 @@ ClientHandler.prototype.onMultiplexConnection = function(connection) {
   var m;
   if (this.authState == 'admin' && (m = connection.id.match(/^:([0-9]+):(.*)$/))) {
     var conn = app.getConnectionById(m[1]);
+    if (!conn) {
+      this.sendMessage('on_forward_error', 'host not found');
+      return;
+    }
     var downstream = conn.multiplex.connect({
       // optionally specify an id for the stream. By default
       // a v1 UUID will be assigned as the id for anonymous streams

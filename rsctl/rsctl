@@ -279,6 +279,9 @@ function listHosts() {
 function createForwardIn() {
   connect();
   var lfd_nr = 1;
+  conn.on('msg:on_forward_error', function(errMes) {
+    console.log("ERROR:",errMes);
+  });
   conn.on('connected', function() {
     var id = +args[1], localPort = +args[2], remotePort = +args[3], remoteHost = args[4] || "127.0.0.1";
     if (!id || !localPort || !remotePort) { displayHelp(); return; }
