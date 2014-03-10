@@ -51,8 +51,7 @@ App.prototype.getConnectionById = function(id) {
 }
 
 app.connections = [];
-app.idCounter = 1;
-app.seqCounter = 1;
+var lfd_nr = 1;
 
 app.tls_options = {
     key: fs.readFileSync(app.configDir+'/rs-server.key'),
@@ -75,7 +74,7 @@ app.multiplex_options = {
 var ClientHandler = function(cleartextStream) {
     var self = this;
     this.cleartextStream = cleartextStream;
-    this.id = app.idCounter++; // TODO: make up more complicated id
+    this.id = lfd_nr++; // TODO: make up more complicated id
     this.authState = '';
     this.hostInfo = {};
     if (cleartextStream.authorized) {
@@ -101,6 +100,7 @@ ClientHandler.prototype = new events.EventEmitter();
 ClientHandler.prototype.onControlConnection =
   require('rsproto/jsonCtrlMessage').onControlConnection;
 
+
 ClientHandler.prototype.onMultiplexConnection = function(connection) {
   // a multiplexed stream has connected from upstream.
   // The assigned id will be accessible as downstreamConnection.id
@@ -118,7 +118,7 @@ ClientHandler.prototype.onMultiplexConnection = function(connection) {
     var downstream = conn.multiplex.connect({
       // optionally specify an id for the stream. By default
       // a v1 UUID will be assigned as the id for anonymous streams
-      id: m[2]
+      id: ':'+this.id+''+(++lfd_nr)+':'+m[2]
     }, function() {
       connection.pipe(downstream).pipe(connection);
     }.bind(this)).on('error', function(error) {
@@ -130,7 +130,7 @@ ClientHandler.prototype.onMultiplexConnection = function(connection) {
 ClientHandler.prototype.sendMessage = function(mtype, data, callback) {
   var seqnum = null;
   if (callback) {
-    seqnum = app.seqCounter++;
+    seqnum = lfd_nr++;
     this.sequenceCallback[seqnum] = callback;
   }
   this.controlConnection.write(JSON.stringify([seqnum, null, mtype, data])+"\n");
