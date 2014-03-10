@@ -299,6 +299,32 @@ function createForwardIn() {
   });
 }
 
+
+function execRemoteCommand() {
+  connect();
+  var lfd_nr = 1;
+  conn.on('msg:on_forward_error', function(errMes) {
+    console.log("ERROR:",errMes);
+  });
+  conn.on('connected', function() {
+    var id = +args[1], cmd = args[2];
+    if (!id || !cmd) { displayHelp(); return; }
+    var upstream = conn.multiplex.connect({
+      id: ':'+id+':exec:'+cmd
+    }, function() {
+      process.stdin.pipe(upstream);
+      upstream.pipe(process.stdout);
+      console.log("forward stream created");
+    }.bind(this)).on('error', function(error) {
+      // timeouts and other errors resulting from connect requests
+      console.log("multiplex connection error!");
+    });
+
+  });
+}
+
+
+
 function dispatcher() {
   switch(args[0] || "") {
   case "keygen":
@@ -324,6 +350,9 @@ function dispatcher() {
     break;
   case "forward":
     createForwardIn();
+    break;
+  case "exec":
+    execRemoteCommand();
     break;
   default:
     displayHelp();
