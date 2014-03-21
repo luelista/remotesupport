@@ -107,6 +107,7 @@ ClientHandler.prototype.onMultiplexConnection = function(connection) {
   if (connection.id == '"ctrl') {
     this.controlConnection = connection;
     this.onControlConnection(connection);
+    return;
   }
   var m;
   if (this.authState == 'admin' && (m = connection.id.match(/^:([0-9]+):(.*)$/))) {
@@ -115,6 +116,7 @@ ClientHandler.prototype.onMultiplexConnection = function(connection) {
       this.sendMessage('on_forward_error', 'host not found');
       return;
     }
+    var ended = false;
     var downstream = conn.multiplex.connect({
       // optionally specify an id for the stream. By default
       // a v1 UUID will be assigned as the id for anonymous streams
@@ -123,8 +125,19 @@ ClientHandler.prototype.onMultiplexConnection = function(connection) {
       connection.pipe(downstream).pipe(connection);
     }.bind(this)).on('error', function(error) {
       this.sendMessage('on_forward_error', ''+error);
-    }.bind(this));
+    }.bind(this)).on('end', function() {
+      console.log("host end");
+      if (!ended) connection.end("Host closed connection");
+      ended = true;
+    });
+    connection.on('end', function() {
+      console.log("admin end");
+      if (!ended) downstream.end();
+      ended = true;
+    });
+    return;
   }
+  this.emit('multiplexconnect', connection.id, connection);
 }
 
 ClientHandler.prototype.sendMessage = function(mtype, data, callback) {

@@ -39,6 +39,7 @@ function displayHelp() {
 Commands:\n\
   hosts        list all connected hosts\n\
   forward      open a tcp tunnel\n\
+  exec         execute remote command\n\
   keygen       generate client keys\n\
   configure    interactively prompt for config\n\
   serverkeygen Generate keys and certs for CA and server\n\
@@ -290,7 +291,7 @@ function createForwardIn() {
         id: ':'+id+':forwardOut:'+remoteHost+':'+remotePort+':'+(++lfd_nr)
       }, function() {
         upstream.pipe(stream).pipe(upstream);
-        console.log("forward stream created");
+        //console.log("forward stream created");
       }.bind(this)).on('error', function(error) {
         // timeouts and other errors resulting from connect requests
         console.log("multiplex connection error!");
@@ -314,10 +315,15 @@ function execRemoteCommand() {
     }, function() {
       process.stdin.pipe(upstream);
       upstream.pipe(process.stdout);
-      console.log("forward stream created");
+      //console.log("forward stream created");
+      upstream.on('end', function() {
+        process.stdin.end();
+        conn.close();
+      });
     }.bind(this)).on('error', function(error) {
       // timeouts and other errors resulting from connect requests
       console.log("multiplex connection error!");
+      conn.close();
     });
 
   });

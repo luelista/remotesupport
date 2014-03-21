@@ -1,0 +1,221 @@
+#!/usr/bin/env node
+
+var net = require('net'),
+    MultiplexStream = require('multiplex-stream'),
+    tls = require('tls'),
+    fs = require('fs'),
+    pem = require('pem'),
+    rsproto = require('rsproto'),
+    readline = require('readline'),
+    //asciitable = require('ascii-table'),
+    blessed = require('blessed');
+var Netmask = require('netmask').Netmask;
+
+var screen = blessed.screen();
+
+var configDir = process.env.RS_DIR || "/tmp/rs";
+var config = rsproto.loadConfig(configDir + '/config.json');
+
+var serverHost = process.env.RS_HOST || config.proxy_host || "127.0.0.1";
+var serverPort = process.env.RS_PORT || config.proxy_port || 4711;
+
+var certCountry = config.certificate_country || "DE",
+    certState = config.certificate_state || "",
+    certOrganization = config.certificate_organization || "Acme Remote Support";
+
+var args = process.argv.slice(2);
+var conn = null;
+
+function connect() {
+  var crtPath = configDir+"/rsctl.crt";
+  if (!fs.existsSync(crtPath)) crtPath = null;
+  var caCertPath = configDir+"/rsctl-ca.crt";
+  if (!fs.existsSync(caCertPath)) caCertPath = null;
+  conn = new rsproto(serverHost, serverPort, false, configDir+"/rsctl.key", crtPath, caCertPath);
+  conn.on('connected', function() {
+
+  })
+}
+
+function fill(tx, len) {
+  tx=''+tx;
+  while(tx.length < len) tx += " ";
+  return tx;
+}
+
+function normtab(tab, colsep) {
+  var wid = [];
+  for(var i = 0; i < tab.length; i++)
+    for(var j = 0; j < tab[i].length; j++)
+      wid[j] = Math.max(wid[j] || 0, (''+tab[i][j]).length);
+  var nor = [];
+  for(var i = 0; i < tab.length; i++) {
+    var lin = [];
+    for(var j = 0; j < tab[i].length; j++) lin[j] = fill(tab[i][j], wid[j]);
+    nor.push(lin.join(colsep));
+  }
+  return nor;
+}
+
+//console.log(normtab([["aaa","bbb","ccc"],["aaaaaaaa","bbbbbbbbbbbbbbb","c"]]," x "));
+//return;
+
+  var helpText = "Usage: rsctl command [options]\n\n\
+Commands:\n\
+  hosts        list all connected hosts\n\
+  forward      open a tcp tunnel\n\
+  keygen       generate client keys\n\
+  configure    interactively prompt for config\n\
+  serverkeygen Generate keys and certs for CA and server\n\
+  fetchca      fetch the ca certificate and save to config dir\n\
+  mancsr       manage certificate signing requests\n\
+  testcon      test the connection\n\n\
+rsctl forward <hostID> <localListenerPort> <remoteConnectPort> [<remoteConnectIP>]\n\n\
+rsctl serverkeygen <hostname>\n\n\
+rsctl keygen <hostname> [admin]\n\n";
+
+
+var inputline, modeline, modelineContainer, menu, content, contentContainer;
+
+function createMenu() {
+  var menuContainer = blessed.box({ top: 0, left: 0, width: 30, bottom: 2, border: {
+    type: 'line',
+    fg: '#aaffaa'
+  } });
+  menu = blessed.list( { parent: menuContainer, top: 1, left: 1, right: 1, bottom: 1, fg: 'green', selectedBg: 'blue', keys: true, vi: true });
+  menu.setItems([
+    'Help',
+    'Configure',
+    'Host List',
+    'CSR Manager',
+    'Connection Info',
+    'Remote Terminal'
+  ]);
+  var menuFunctions = [ null, null, createHostList, null, createConnectionInfo, null ];
+  menu.on('select', function() {
+    if (menuFunctions[menu.selected]) {
+      menuFunctions[menu.selected]();
+    } else {
+      modeline.setContent('menu enter- '+menu.selected);
+      content.pushLine("Select: "+menu.items[menu.selected].content+"\n");
+      content.focus();
+    }
+    screen.render();
+  });
+  menu.on('focus',function() {
+    inputline.setContent(' UP/DOWN: select item     RETURN: goto content       ESC: quit      F2: reconnect');
+  });
+  menu.key('f2', connect);
+  menu.key('escape', quitWithQuestion);
+  screen.append(menuContainer);
+}
+
+function createModeline() {
+  modelineContainer = blessed.box({ bottom: 0, height: 2, left: 0, right: 0 });
+  modeline = blessed.box({ parent: modelineContainer, top: 0, left: 0, right: 0, height: 1, bg: 'white', fg: 'black' });
+  inputline = blessed.box({ parent: modelineContainer, top: 1, left: 0, right: 0, height: 1 });
+
+  screen.append(modelineContainer);
+}
+
+function createContent() {
+  contentContainer = blessed.box({ top: 0, bottom: 2, left: 31, right: 0,border: {
+    type: 'line',
+    fg: '#ffffff'
+  } });
+  content = blessed.text({top:1,bottom:1,left:1,right:1,scrollable:true,alwaysScroll:true,content:helpText,parent:contentContainer,keys:true});
+  screen.append(contentContainer);
+  content.key('escape',function() {
+    menu.focus();
+  });
+  content.on('focus', function() {
+    inputline.setContent('  ESC: back to menu');
+  });
+}
+
+function createConnectionInfo() {
+  var infotx = blessed.text({ parent:contentContainer, top: 1, bottom: 1, left: 1, right: 1, fg: 'white' });
+  screen.render();
+  infotx.key('escape',function() {
+    menu.focus();
+    infotx.detach();
+    screen.render();
+  });
+  conn.sendMessage('hello:who_am_i', '', function(err, answer) {
+    var tx = "";
+    for(var k in answer) tx+= fill(k,30)+": "+answer[k]+"\n";
+    infotx.setContent(tx);
+    screen.render();
+  });
+  infotx.focus();
+}
+
+function createHostList() {
+  var hostheader = blessed.text({ parent:contentContainer, top: 1, height: 1, left: 1, right: 1, bg: '#400', fg: 'white' });
+  var hostlist = blessed.list({ parent:contentContainer, top: 3, bottom: 1, left: 1, right: 1, fg: 'white', selectedBg: 'blue',keys: true });
+  inputline.setContent('  ESC: leave host list ');
+  hostlist.key('escape',function() {
+    menu.focus();
+    hostlist.detach(); hostheader.detach();
+    screen.render();
+  });
+  conn.sendMessage('admin:get_hosts', '', function(err, hosts) {
+    var tab = Math.floor(hostlist.width / 8);
+    var items = [];
+    items.push(['ID', 'Auth', 'IP Address', 'CN', 'OU', 'Details']);
+    for(var i = 0; i < hosts.length; i++) {
+      var c = hosts[i];
+      items.push([c.id, c.auth, c.address, c.cn, c.ou, (c.pendingCSR ? "<PENDING CSR>" : "") + (c.self ? "<SELF>" : "")]);
+    }
+    var ntab = normtab(items, ' | ');
+    var header = ntab.shift();
+    hostheader.setContent(' '+header);
+    hostlist.setItems(ntab);
+    hostlist.select(0);
+    screen.render();
+  });
+  screen.render();
+  hostlist.focus();
+}
+
+function askQuestion(quest, callback) {
+  var questionLine = blessed.input({ parent:modelineContainer, top:0,left:0,right:0,height:1,bg:'#aaa',fg:'black',content:quest});
+  var answerLine = blessed.input({ parent:modelineContainer, top:1,left:0,right:0,height:1,content:defaultCont});
+  answerLine.focus();
+  screen.render();
+  answerLine.key('escape', function(){ answerLine.detach(); questionLine.detach(); screen.render(); callback(false); });
+  answerLine.key('enter', function(){ answerLine.detach(); questionLine.detach(); screen.render(); callback(questionLine.content); });
+}
+
+function askYesnoQuestion(quest, callback) {
+  var questionLine = blessed.input({ parent:modelineContainer, top:0,left:0,right:0,height:1,tags:true,fg:'black',content:' {#ff5-bg} '+quest+'      {/#ff5-bg}'});
+  var answerLine = blessed.box({ parent:modelineContainer, top:1,left:0,right:0,height:1,tags:true,content:"{right}{red-bg}{white-fg} ESC {/red-bg}{/white-fg} to cancel     {green-bg}{white-fg} F1 {/green-bg}{/white-fg} to continue     {/right}"});
+  answerLine.focus();
+  screen.render();
+  answerLine.key('escape', function(){ answerLine.detach(); questionLine.detach(); screen.render(); callback(false); });
+  answerLine.key('f1', function(){ answerLine.detach(); questionLine.detach(); screen.render(); callback(true); });
+}
+
+function quitWithQuestion() {
+  askYesnoQuestion('Do you really want to exit Remote Support TUI?', function(doIt) {
+    if (doIt) return process.exit(0);
+  });
+}
+
+setInterval(function() {
+  //update modeline
+  modeline.setContent(' *****  '+(conn?'Connected': 'Offline')+ '     '+new Date()+'   '+serverHost+':'+serverPort);
+  screen.render();
+}, 1000);
+
+screen.key('q', quitWithQuestion);
+
+createMenu();
+createModeline();
+createContent();
+menu.focus();
+
+screen.render();
+
+connect();
+
