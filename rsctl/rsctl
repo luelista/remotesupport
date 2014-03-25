@@ -310,9 +310,7 @@ function execRemoteCommand() {
   conn.on('connected', function() {
     var id = +args[1], cmd = args[2];
     if (!id || !cmd) { displayHelp(); return; }
-    var upstream = conn.multiplex.connect({
-      id: ':'+id+':exec:'+cmd
-    }, function() {
+    conn.createTunnel(id, { type: 'exec', cmd: cmd, args: args.slice(3) }, function(upstream) {
       process.stdin.pipe(upstream);
       upstream.pipe(process.stdout);
       //console.log("forward stream created");
@@ -320,12 +318,11 @@ function execRemoteCommand() {
         process.stdin.end();
         conn.close();
       });
-    }.bind(this)).on('error', function(error) {
+    }, function(err) {
       // timeouts and other errors resulting from connect requests
-      console.log("multiplex connection error!");
+      console.log("multiplex connection error!", err);
       conn.close();
-    });
-
+    }, true);
   });
 }
 
