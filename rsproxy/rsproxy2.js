@@ -96,7 +96,17 @@ var ClientHandler = function(cleartextStream) {
       if (index > -1) app.connections.splice(index, 1);
     }.bind(this));
 }
+
+
+// geht nicht!!!!!
 ClientHandler.prototype = new events.EventEmitter();
+
+
+
+
+
+
+
 ClientHandler.prototype.onControlConnection =
   require('rsproto/jsonCtrlMessage').onControlConnection;
 
@@ -137,6 +147,7 @@ ClientHandler.prototype.onMultiplexConnection = function(connection) {
     });
     return;
   }
+  console.log("emitting multiplexconnect");
   this.emit('multiplexconnect', connection.id, connection);
 }
 
