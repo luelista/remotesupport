@@ -24,8 +24,13 @@ zip -r "./build/rsmanager.zip.nw" node_modules/
 
 mkdir -p "./build/RS Manager (Win32)/"
 
-cat ./resources/node-webkit-win32/nw.exe "./build/rsmanager.zip.nw" > "./build/RS Manager (Win32)/rsmanager.exe"
+#cat ./resources/node-webkit-win32/nw.exe "./build/rsmanager.zip.nw" > "./build/RS Manager (Win32)/rsmanager.exe"
+
 cp ./resources/node-webkit-win32/*.dll "./build/RS Manager (Win32)/"
+cp ./resources/node-webkit-win32/nw.exe "./build/RS Manager (Win32)/RS Manager.exe"
+
+cp -r ./rsmanager.nw/* "./build/RS Manager (Win32)/"
+cp -r ./node_modules "./build/RS Manager (Win32)/"
 
 
 echo "Windows Build (Client)"

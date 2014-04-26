@@ -2,7 +2,7 @@ var fs = require('fs'),
     pem = require('pem'),
     _ = require('underscore');
 
-Plugin("tunnel_broker", "0.0.1", function(App) {
+module.exports = { pluginName: "tunnel_broker", pluginVersion: "0.0.1", pluginConnect: function(App) {
   var tunIdCounter = 1;
   var tunInfo = {};
 
@@ -59,4 +59,4 @@ Plugin("tunnel_broker", "0.0.1", function(App) {
     });
 
   });
-});
+}};

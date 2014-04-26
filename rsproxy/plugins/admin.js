@@ -2,26 +2,33 @@ var fs = require('fs'),
     pem = require('pem'),
     _ = require('underscore');
 
-Plugin("admin", "0.0.1", function(App) {
-  App.on('connection', function(handler) {
+module.exports = { pluginName: "admin", pluginVersion: "0.0.1", pluginConnect: function(app) {
+  app.on('connection', function(handler) {
     if (handler.authState != 'admin') return;
-
+    
+    app.on('connection', function(newhandler) {
+      handler.sendMessage('event:on_connect', newhandler.id);
+    });
+    app.on('disconnect', function(id) {
+      handler.sendMessage('event:on_disconnect', id);
+    });
+    
     handler.messenger["admin:get_hosts"] = function(type, data, next) {
       var hosts = [];
-      for (var i in App.connections) {
-        var host = App.connections[i];
+      for (var i in app.connections) {
+        var host = app.connections[i];
         hosts.push(
-          _.extend({
+          _.extend(host.clientInfo, host.hostInfo, {
             id: host.id,  self: host==handler,
             pendingCSR: host.pendingCSR?true:false,
             auth: host.authState
-          }, host.hostInfo));
+          }));
       }
       next(null, hosts);
     };
 
   });
-});
+}};
 
 var extend = function(obj) {
     Array.prototype.slice.call(arguments, 1).forEach(function(source) {

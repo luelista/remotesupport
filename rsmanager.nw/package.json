@@ -7,10 +7,10 @@
   "window": {
     "title": "RS Manager - Loading ...",
     "icon": "icon.png",
-    "toolbar": true,
+    "toolbar": false,
     "frame": true,
-    "width": 800,
-    "height": 500,
+    "width": 980,
+    "height": 620,
     "position": "mouse",
     "min_width": 640,
     "min_height": 480

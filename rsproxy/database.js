@@ -1,3 +1,4 @@
+module.exports = function(app) {
 var Sequelize = require('sequelize');
 
 var sequelize = new Sequelize('database', 'username', 'password', {
@@ -14,6 +15,8 @@ var Certificate = sequelize.define('User', {
   commonName: Sequelize.STRING,
   ou: Sequelize.STRING,
   fingerprint: Sequelize.STRING,
+  hostName: Sequelize.STRING,
+  physicalLocation: Sequelize.STRING,
   comment: Sequelize.STRING
 });
 
@@ -48,7 +51,11 @@ sequelize
 })
 
 
-exports.sequelize = sequelize;
-exports.Certificate = Certificate;
-exports.ManagedHosts = ManagedHosts;
-exports.CSR = CSR;
+return {
+  sequelize : sequelize,
+  Certificate : Certificate,
+  ManagedHosts : ManagedHosts,
+  CSR : CSR
+};
+
+}
