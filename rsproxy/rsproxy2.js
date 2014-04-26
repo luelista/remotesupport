@@ -7,7 +7,7 @@ var Netmask = require('netmask').Netmask;
 
 function App() {
 }
-App.prototype = new events.EventEmitter();
+util.inherits(App, events.EventEmitter);
 
 var app = new App();
 global.app = app;
@@ -99,7 +99,11 @@ var ClientHandler = function(cleartextStream) {
 
 
 // geht nicht!!!!!
-ClientHandler.prototype = new events.EventEmitter();
+//ClientHandler.prototype = new events.EventEmitter();
+
+
+//so gehts - http://stackoverflow.com/a/8898528/562836
+util.inherits(ClientHandler, events.EventEmitter);
 
 
 
