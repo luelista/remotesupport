@@ -1,87 +1,46 @@
+
 var net = require('net'),
+    MultiplexStream = require('multiplex-stream'),
     tls = require('tls'),
-    nssocket = require('nssocket'),
     fs = require('fs'),
-    path = require('path'),
-    os = require('os');
+    pem = require('pem'),
+    rsproto = require('rsproto');
 
+App = {};
+App.debugCache=[];
+App.debug = function(){ App.debugCache.push(arguments) }
 
-var config = require('./config');
-var TunnelProtocol = require('TunnelProtocol').TunnelProtocol;
+App.configDir = process.env.RS_DIR || "./config";
+App.config = rsproto.loadConfig(App.configDir + '/config.json');
 
-qqTW={};
+var serverHost = process.env.RS_HOST || App.config.proxy_host || "127.0.0.1";
+var serverPort = process.env.RS_PORT || App.config.proxy_port || 4711;
 
-var tlsParams = {
-  type: 'tls',
-  cert: fs.readFileSync(config.serverCertFile),
-  ca: fs.readFileSync(config.serverCertFile)
-};
-config.tlsParams = tlsParams;
-var socket = new nssocket.NsSocket({
-  reconnect: true,
-  type: tlsParams.type,
-  cert: tlsParams.cert,
-  ca: tlsParams.ca,
-  host: config.server,
-  port: config.serverPort,
-  retryInterval: 5000,
-  maxRetries: 999999999,
-  retryCalculateInterval: function(t, n) { return t; }
-});
-global.socket=socket;
-/*
- *...schei§
- socket.socket.cleartext.pair.on('secure', function(err) {
-  console.log('secure2=',socket.socket.authorized,socket.socket.authorizationError);
-  
-});*/
+var certCountry = App.config.certificate_country || "DE",
+    certState = App.config.certificate_state || "",
+    certOrganization = App.config.certificate_organization || "Acme Remote Support";
 
-socket.on('error', function(err) {
-  console.log('socket error:', err);  
-});
+var args = process.argv.slice(2);
+App.conn = null;
 
-socket.on('start', function () {
-  console.log('reconnecting...');
-  document.title = "RS Manager - Connected to "+config.server+":"+config.serverPort;
-});
-
-socket.data(['rsvp', 'please-authenticate'], function() {
-  console.log('Authenticating...');
-  socket.send(['rsvp', 'login-as-admin'], {
-    username: 'administrator',
-    password: '1234'
-  });
-});
-
-
-socket.data(['rsvp', 'error'], function(data) {
-  console.log('Error received: ' + data.type + '\t' + data.reason);
-});
-
-socket.data(['rsvp', 'message'], function(data) {
-  console.log('MESSAGE : ' , data.message);
-});
-
-TunnelProtocol(socket, config);
-
-socket.connect();
-
-function SendHeartbeat() {
-  setTimeout(SendHeartbeat, config.heartbeatInterval * 1000);
-  
-  socket.send(['rsvp', 'heartbeat'], {
-    
-  });
+function connect() {
+  var crtPath = App.configDir+"/rsctl.crt";
+  if (!fs.existsSync(crtPath)) crtPath = null;
+  var caCertPath = App.configDir+"/rsctl-ca.crt";
+  if (!fs.existsSync(caCertPath)) caCertPath = null;
+  App.debug("Connecting to "+serverHost+":"+serverPort);
+  App.conn = new rsproto(serverHost, serverPort, 'rsmanager', false, App.configDir+"/rsctl.key", crtPath, caCertPath);
 }
 
-setTimeout(SendHeartbeat, config.heartbeatInterval * 1000);
-
-
+connect();
+App.conn.on('ctrlmessage', function(mtype, data) {
+  App.debug("on Control Message", mtype);
+});
 
 
 // Takes an ISO time and returns a string representing how
 // long ago the date represents.
-qqTW.prettyDate=function(time){
+App.prettyDate=function(time){
   var date = new Date(typeof time == 'number' ? time : (time || "").replace(/-/g,"/").replace(/[TZ]/g," ")),
     diff = (((new Date()).getTime() - date.getTime()) / 1000),
     day_diff = Math.floor(diff / 86400);
@@ -105,7 +64,7 @@ qqTW.prettyDate=function(time){
 
 
 
-qqTW.prettyTimespan=function(diff){
+App.prettyTimespan=function(diff){
   var  day_diff = Math.floor(diff / 86400);
       
   if ( isNaN(day_diff) || day_diff < 0)

@@ -31,7 +31,7 @@ function connect() {
   if (!fs.existsSync(crtPath)) crtPath = null;
   var caCertPath = configDir+"/rsctl-ca.crt";
   if (!fs.existsSync(caCertPath)) caCertPath = null;
-  conn = new rsproto(serverHost, serverPort, false, configDir+"/rsctl.key", crtPath, caCertPath);
+  conn = new rsproto(serverHost, serverPort, 'rstui', false, configDir+"/rsctl.key", crtPath, caCertPath);
   conn.on('connected', function() {
 
   })

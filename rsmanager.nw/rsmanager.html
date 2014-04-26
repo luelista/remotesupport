@@ -2,9 +2,10 @@
 <html>
   <head>
     <title>RS Manager - Initializing ...</title>
-    <link rel="stylesheet" type="text/css" href="extjs/resources/css/ext-all-neptune.css">
+    <link rel="stylesheet" type="text/css" href="extjs/resources/css/ext-all.css">
+    <link rel="stylesheet" type="text/css" href="images/iconfont.css">
     <script type="text/javascript" src="extjs/ext-debug.js"></script>
-    <script type="text/javascript" src="extjs/ext-theme-neptune.js"></script>
+    <script type="text/javascript" src="extjs/ext-theme-classic.js"></script>
     <script src="jquery-1.10.2.min.js"></script>
     <script src="rsmanager.js"></script>
     <script src="gui.js"></script>
@@ -14,7 +15,7 @@
       html,body { margin: 0; padding: 0; overflow: hidden; }
       header { background: #eeffee; color: #336633; padding: 10px; border-bottom: 1px solid #336633; height: 39px; }
       header h1 { margin: 0; padding: 0; display: inline-block; }
-      #mainArea {  overflow: scroll; }
+      #mainArea {  }
       #sidebar {  height :100%; }
       section.padded { padding: 10px; }
       #mainArea section { display: none; } #mainArea section.current { display: block; }
@@ -23,8 +24,14 @@
       table { width: 100%; border-collapse: collapse; }
       table td, table th { border: 1px solid #ddd; }
       table th { text-align: left; }
+      #debugout { background: #333; color: #eee; font-family: monospace; white-space: pre-wrap; padding: 5px; }
     </style>
     <script>
+      //
+      
+      var async = require('async'),
+        util = require('util');
+      
       currentItemId = null;
       Os_Type = require('os').type();
       var gui = require('nw.gui');
@@ -35,8 +42,8 @@
       ctxMenu.append(new gui.MenuItem({label:"Open VNC Connection",click:onOpenVncConnection}));
 
       $(window).resize(function() {
-        $("#mainArea,#sidebar").css('height', $(window).height()-60+'px');
-        $("#mainArea").css('width',$(window).width()-201+'px')
+        $("#sidebar").css('height', $(window).height()-60+'px');
+        //$("#mainArea").css('width',$(window).width()-201+'px')
       });
       $(function() {
         $(window).resize();
@@ -94,9 +101,40 @@
 
         //
       }
-
-      var currentItem;
-
+      
+      function refreshHosts() {
+        App.conn.sendMessage('admin:get_hosts', '', function(err, hosts) {
+          App.debug("HOSTS RECV.", hosts)
+          var grid = Ext.getCmp('hostsGrid');
+          grid.store.loadData(hosts);
+        });
+      }
+      
+      async.parallel([Ext.onReady, function(next) { App.conn.on('connected', next); }], function(err) {
+        App.debug("READY AND CONNECTED")
+        refreshHosts();
+        App.conn.on('msg:event:on_hosts_changed', refreshHosts);
+        App.conn.sendMessage('hello:who_am_i', '', function(err, results) {
+          App.debug("Connection Info: ", util.inspect(results));
+        });
+      });
+      
+      Ext.onReady(function() {
+        App.debug = function() {
+          var out = [];
+          for(var i=0; i<arguments.length; i++) out[i] = ''+arguments[i];
+          $("#debugout").append(out.join("\t")+"\n");
+          setTimeout(function() {
+            Ext.getCmp('Console').body.dom.scrollTop=9999;
+          }, 500)
+        }
+        App.debugCache.map(function(a){App.debug.apply(null,a);}); App.debugCache = null;
+        
+      });
+      
+      
+      
+/*
       socket.data(['rsvp', 'message'], function(data) {
         alert("Message from #"+data.fromId+" ("+data.fromAddress+"):\n\n"+data.message);
       });
@@ -142,6 +180,7 @@
         $("#connection_icon").attr("src","images/connect_established.png");
       });
       socket.on('error', function() { $("#connection_icon").attr("src","images/connect_no.png"); })
+      */
     </script>
   </head>
   <body>
@@ -156,24 +195,7 @@
       <button onclick="onOpenVncConnection()"><img src='images/krdc.png'>VNC</button>
 
     </header>-->
-    <div id="sidebar" class="finder-sidebar">
-      <h2>Lists <input type="button" onclick="listCons()" value="Refresh"></h2>
-      <ul id="mainmenu">
-      <li class="cur" data-target="main_conList">Connected Clients</li>
-      <li>Client Management</li>
-      <li data-target="main_openStreams">All Connections</li>
-      </ul>
-
-      <h2>Terminal</h2>
-      <ul>
-      <li data-target="main_logConsole">Log Console</li>
-      </ul>
-
-      <h2>Running Commands</h2>
-      <ul>
-      </ul>
-
-    </div>
+    
     <div id="mainArea">
       <section id="main_conList" class="padded current">
         <table id="conList"></table>
