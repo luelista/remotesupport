@@ -2,7 +2,7 @@ var fs = require('fs'),
     pem = require('pem'),
     _ = require('underscore');
 
-Plugin("read_certs", "0.0.1", function(App) {
+module.exports = { pluginName: "read_certs", pluginVersion: "0.0.1", pluginConnect: function(App) {
 
   var caKey = App.configDir+"/ca/rs-ca.key";
   var caCert = App.configDir+"/ca/rs-ca.crt";
@@ -58,12 +58,11 @@ Plugin("read_certs", "0.0.1", function(App) {
 
       next(null, { id: handler.id });
     }
-
-
+    
+    // Methods below this point - admin only
+    if (handler.authState != 'admin') return;
+    
     handler.messenger["read_certs:csr_action"] = function(type, data, next) {
-      if (handler.authState != 'admin') {
-        next('forbidden', null); return;
-      }
       var target = null;
       for(var i in app.connections) {
         if (app.connections[i].id === data.id && app.connections[i].pendingCSR)
@@ -121,4 +120,4 @@ Plugin("read_certs", "0.0.1", function(App) {
 
 
   });
-});
+}};

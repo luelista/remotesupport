@@ -7,7 +7,8 @@ var net = require('net'),
     pem = require('pem'),
     rsproto = require('rsproto'),
     readline = require('readline'),
-    asciitable = require('ascii-table');
+    asciitable = require('ascii-table'),
+    util = require('util');
 var Netmask = require('netmask').Netmask;
 
 var configDir = process.env.RS_DIR || "/tmp/rs";
@@ -23,12 +24,20 @@ var certCountry = config.certificate_country || "DE",
 var args = process.argv.slice(2);
 var conn = null;
 
+//==> Helper
+function makeReadline() {
+  return readline.createInterface({
+    input: process.stdin,
+    output: process.stdout
+  });
+}
+
 function connect() {
   var crtPath = configDir+"/rsctl.crt";
   if (!fs.existsSync(crtPath)) crtPath = null;
   var caCertPath = configDir+"/rsctl-ca.crt";
   if (!fs.existsSync(caCertPath)) caCertPath = null;
-  conn = new rsproto(serverHost, serverPort, false, configDir+"/rsctl.key", crtPath, caCertPath);
+  conn = new rsproto(serverHost, serverPort, 'rsctl', false, configDir+"/rsctl.key", crtPath, caCertPath);
   conn.on('connected', function() {
 
   })
@@ -39,9 +48,12 @@ function displayHelp() {
 Commands:\n\
   hosts        list all connected hosts\n\
   forward      open a tcp tunnel\n\
+  exec         execute remote command\n\
   keygen       generate client keys\n\
   configure    interactively prompt for config\n\
   serverkeygen Generate keys and certs for CA and server\n\
+  serverstart  Start the rsproxy server\n\
+  serverstop   Stop the rsproxy server\n\
   fetchca      fetch the ca certificate and save to config dir\n\
   mancsr       manage certificate signing requests\n\
   testcon      test the connection\n\n\
@@ -104,7 +116,7 @@ function generateServerKey() {
   if (!fs.existsSync(caKey)) {
     console.log("please generate ca key ("+caKey+") and cert first!");
     console.log("  cd "+configDir+"/ca/");
-    console.log("  openssl genrsa -aes128 -out rs-ca.key 4096");
+    console.log("  openssl genrsa -out rs-ca.key 4096");
     console.log("  openssl req -new -x509 -days 3650 -key rs-ca.key -out rs-ca.crt");
     return;
   }
@@ -191,10 +203,7 @@ function manageCSR() {
     conn.sendMessage("admin:get_hosts", {}, function(err, hosts) {
       if (err) { console.log("ERROR:",err); conn.close(); return; }
 
-      var rl = readline.createInterface({
-        input: process.stdin,
-        output: process.stdout
-      });
+      var rl = makeReadline();
 
       var sel = null, csr = null, act = false;
       var cmds = {
@@ -290,7 +299,7 @@ function createForwardIn() {
         id: ':'+id+':forwardOut:'+remoteHost+':'+remotePort+':'+(++lfd_nr)
       }, function() {
         upstream.pipe(stream).pipe(upstream);
-        console.log("forward stream created");
+        //console.log("forward stream created");
       }.bind(this)).on('error', function(error) {
         // timeouts and other errors resulting from connect requests
         console.log("multiplex connection error!");
@@ -299,6 +308,54 @@ function createForwardIn() {
   });
 }
 
+
+function doConfiguration() {
+  var config = '\n\
+{\n\
+  "server_port": %s,\n\
+  \n\
+  "proxy_host": "%s",\n\
+  "proxy_port": %s,\n\
+  \n\
+  "certificate_country": "%s",\n\
+  "certificate_state": "%s",\n\
+  "certificate_organization": "%s",\n\
+  "adminOU": "%s"\n\
+}\n\
+';
+  var rl = makeReadline();
+  var answers = [], questions = [
+    'Server-Port',
+    'Proxy-Host', 'Proxy-Port', 
+    'Zertifikat - Land',
+    'Zertifikat - Staat',
+    'Zertifikat - Organisation',
+    'Administrator-OU'
+  ], defaults = [
+  '4711', 'localhost', '4711', 'DE', '', 'Acme Remote Support', 'ADMIN'
+  ];
+  var i = -1;
+  function makeConfig() {
+    answers.unshift(config);
+    var c = util.format.apply(null, answers);
+    console.log("Konfiguration wurde generiert:")
+    console.log(c);
+    fs.writeFileSync(configDir+'/config.json', c);
+    console.log("Konfiguration wurde gespeichert unter "+configDir+'/config.json');
+    rl.close();
+  }
+  function askNext(answer) {
+    switch (answer) {
+      case '':  answer = defaults[i]; break;
+      case '.': answer = '';
+    }
+    answers[i] = answer;
+    i++;
+    if (i == questions.length) makeConfig();
+    else rl.question(questions[i]+' ['+defaults[i]+']: ', askNext);
+  }
+  askNext();
+}
 
 function execRemoteCommand() {
   connect();
@@ -309,20 +366,25 @@ function execRemoteCommand() {
   conn.on('connected', function() {
     var id = +args[1], cmd = args[2];
     if (!id || !cmd) { displayHelp(); return; }
-    var upstream = conn.multiplex.connect({
-      id: ':'+id+':exec:'+cmd
-    }, function() {
+    conn.createTunnel(id, { type: 'exec', cmd: cmd, args: args.slice(3) }, function(upstream) {
       process.stdin.pipe(upstream);
       upstream.pipe(process.stdout);
-      console.log("forward stream created");
-    }.bind(this)).on('error', function(error) {
+      //console.log("forward stream created");
+      upstream.on('end', function() {
+        process.stdin.end();
+        conn.close();
+      });
+    }, function(err) {
       // timeouts and other errors resulting from connect requests
-      console.log("multiplex connection error!");
-    });
-
+      console.log("multiplex connection error!", err);
+      conn.close();
+    }, true);
   });
 }
 
+function serverRun(state) {
+  
+}
 
 
 function dispatcher() {
@@ -347,6 +409,12 @@ function dispatcher() {
     break;
   case "serverkeygen":
     generateServerKey();
+    break;
+  case "serverstart":
+    serverRun(true);
+    break;
+  case "serverstop":
+    serverRun(false);
     break;
   case "forward":
     createForwardIn();

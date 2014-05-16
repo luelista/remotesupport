@@ -1,57 +1,39 @@
 var net = require('net'),
-    MultiplexStream = require('multiplex-stream'),
     tls = require('tls'),
     fs = require('fs'),
-    events = require('events');
-var Netmask = require('netmask').Netmask;
+    App = require('./rsproxy_app'),
+    ClientHandler = require('./clienthandler');
 
-function App() {
-}
-App.prototype = new events.EventEmitter();
-
-var app = new App();
+var app = new App(process.env.RS_DIR || "/tmp/rs");
 global.app = app;
 
-app.configDir = process.env.RS_DIR || "/tmp/rs";
-try {
-  app.config = JSON.parse(fs.readFileSync(app.configDir+'/config.json').toString().replace(/^\s*\/\/.*$/gm,""));
-} catch(e) { console.log("Unable to read config from "+app.configDir+'/config.json'+": ",e); return; }
-if(app.config.adminNetmask) app.config.adminNetmask = new Netmask(app.config.adminNetmask);
-
-app.db = require('./database')
-
-app.plugins = [];
-global.Plugin = function(name, ver, onInit) {
-  app.plugins.push({ name: name, ver: ver, onInit: onInit });
-};
-App.prototype.runPlugins = function(){
-  for(var i in this.plugins) {
-    this.plugins[i].onInit(this);
+if (process.argv.length == 3) {
+  var arg = process.argv[2]
+  switch(arg) {
+    case "start":
+      require('daemon')();
+      break;
+    case "status":
+    case "stop":
+      if (fs.existsSync(app.configDir+'/server.pid')) {
+        console.log("pidfile not found\n"); process.exit(1);
+      }
+      var pid = fs.readFileSync(app.configDir+'/server.pid')
+      try {
+        process.kill(pid, arg == "stop" ? 'SIGKILL' : 0);
+        console.log(arg == "stop" ? "server stopped" : "server running");
+        process.exit(0);
+      } catch(e) {
+        console.log("server not running");
+        process.exit(2);
+      }
+      break;
   }
 }
-fs.readdirSync("./plugins").forEach(function(file) {
-  if (file.match(/\.js$/)) require("./plugins/" + file);
-});
-App.prototype.broadcastMessage = function(filter, mtype, mdata) {
-  for(var i in app.connections) {
-    var conn = app.connections[i];
-    if (filter(conn)) conn.sendMessage(mtype, mdata);
-  }
-}
-App.prototype.filterAuthState = function(fvalue) {
-  return (function(conn) {
-    return conn.authState == fvalue;
-  });
-}
-App.prototype.getConnectionById = function(id) {
-  for(var i in this.connections) {
-    if (this.connections[i].id == id) return this.connections[i];
-  }
-  return null;
-}
 
-app.connections = [];
-var lfd_nr = 1;
+fs.writeFileSync(app.configDir+'/server.pid', process.pid);
+
+app.loadPlugins();
 
 app.tls_options = {
     key: fs.readFileSync(app.configDir+'/rs-server.key'),
@@ -71,69 +53,8 @@ app.multiplex_options = {
     connectTimeout: 5000
 };
 
-var ClientHandler = function(cleartextStream) {
-    var self = this;
-    this.cleartextStream = cleartextStream;
-    this.id = lfd_nr++; // TODO: make up more complicated id
-    this.authState = '';
-    this.hostInfo = {};
-    if (cleartextStream.authorized) {
-      this.cert = cleartextStream.getPeerCertificate();
-      this.authState = (this.cert.subject.OU === app.config.adminOU) ? 'admin' : 'host';
-      this.hostInfo.cn = this.cert.subject.CN;
-      this.hostInfo.email = this.cert.subject.EMAIL;
-    }
-    this.hostInfo.address = cleartextStream.remoteAddress;
-    this.hostInfo.connectionTimestamp = +new Date();
-    this.sequenceCallback = {};
-    this.messenger = {};
-    this.multiplex = new MultiplexStream(app.multiplex_options, function(downstreamConnection) {
-        self.onMultiplexConnection(downstreamConnection);
-    });
-    cleartextStream.pipe(this.multiplex).pipe(cleartextStream);
-    cleartextStream.on('close', function() {
-      var index = app.connections.indexOf(this);
-      if (index > -1) app.connections.splice(index, 1);
-    }.bind(this));
-}
-ClientHandler.prototype = new events.EventEmitter();
-ClientHandler.prototype.onControlConnection =
-  require('rsproto/jsonCtrlMessage').onControlConnection;
-
-
-ClientHandler.prototype.onMultiplexConnection = function(connection) {
-  // a multiplexed stream has connected from upstream.
-  // The assigned id will be accessible as downstreamConnection.id
-  if (connection.id == '"ctrl') {
-    this.controlConnection = connection;
-    this.onControlConnection(connection);
-  }
-  var m;
-  if (this.authState == 'admin' && (m = connection.id.match(/^:([0-9]+):(.*)$/))) {
-    var conn = app.getConnectionById(m[1]);
-    if (!conn) {
-      this.sendMessage('on_forward_error', 'host not found');
-      return;
-    }
-    var downstream = conn.multiplex.connect({
-      // optionally specify an id for the stream. By default
-      // a v1 UUID will be assigned as the id for anonymous streams
-      id: ':'+this.id+''+(++lfd_nr)+':'+m[2]
-    }, function() {
-      connection.pipe(downstream).pipe(connection);
-    }.bind(this)).on('error', function(error) {
-      this.sendMessage('on_forward_error', ''+error);
-    });
-  }
-}
-
-ClientHandler.prototype.sendMessage = function(mtype, data, callback) {
-  var seqnum = null;
-  if (callback) {
-    seqnum = lfd_nr++;
-    this.sequenceCallback[seqnum] = callback;
-  }
-  this.controlConnection.write(JSON.stringify([seqnum, null, mtype, data])+"\n");
+if (!app.config.server_port) {
+  throw new Error("Mandatory configuration parameter 'server_port' missing.");
 }
 
 // run server
@@ -142,11 +63,11 @@ tls.createServer(app.tls_options, function (cleartextStream) {
     var handler = new ClientHandler(cleartextStream);
     app.connections.push(handler);
     app.emit('connection', handler);
-}).listen(app.config.server_port || 4711)
+}).listen(app.config.server_port)
 .on('clientError', function(err, pair) {
   console.log("clientError", err);
 });
 
 app.runPlugins();
 
-console.log("Listening on port "+app.config.serverPort+" ...");
+console.log("Listening on port "+app.config.server_port+" ...");

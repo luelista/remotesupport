@@ -25,7 +25,7 @@ function connect() {
     var keyPath = (!fs.existsSync(CERT_KEY_PATH)) ? null : CERT_KEY_PATH;
   var caCertPath = configDir+"/rsctl-ca.crt";
   if (!fs.existsSync(caCertPath)) caCertPath = null;
-  conn = new rsproto(serverHost, serverPort, false, keyPath, crtPath, caCertPath);
+  conn = new rsproto(serverHost, serverPort, 'rsclient', false, keyPath, crtPath, caCertPath);
   conn.on('connected', function() {
   })
 }
@@ -62,4 +62,11 @@ connect();
 
 if (!fs.existsSync(CERT_PATH)) generateKeys();
 
-console.log("listening to server...");
+conn.on('connected', function() {
+  conn.sendMessage('hello:who_am_i', '', function(err, data) {
+    if (err)  console.log("ERROR:",err);
+    else console.log("Registered as Client #"+data.id+", Auth Type '"+data.auth+"'")
+  });
+})
+
+//console.log("listening to server...");
