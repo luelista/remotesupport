@@ -1,5 +1,6 @@
 var MultiplexStream = require('multiplex-stream'),
-    events = require('events');
+    events = require('events'),
+    util = require('util');
 
 var lfd_nr = 1;
 

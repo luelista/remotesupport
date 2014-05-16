@@ -1,5 +1,6 @@
 var fs = require('fs'),
-    events = require('events');
+    events = require('events'),
+    util = require('util');
 var Netmask = require('netmask').Netmask;
 
 function App(configDir) {
