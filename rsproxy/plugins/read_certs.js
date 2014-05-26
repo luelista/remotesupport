@@ -84,7 +84,6 @@ module.exports = { pluginName: "read_certs", pluginVersion: "0.0.1", pluginConne
         App.db.Certificate.create({
           commonName: target.pendingCSR.commonName,
           ou: target.pendingCSR.ou
-
         }).success(function(user) {
           var certreq = {
             csr: target.pendingCSR.pem,

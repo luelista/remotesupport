@@ -10,7 +10,7 @@ App = {};
 App.debugCache=[];
 App.debug = function(){ App.debugCache.push(arguments) }
 
-App.configDir = process.env.RS_DIR || "./config";
+App.configDir = process.env.RS_DIR || "~/.config/rs";
 App.config = rsproto.loadConfig(App.configDir + '/config.json');
 
 var serverHost = process.env.RS_HOST || App.config.proxy_host || "127.0.0.1";

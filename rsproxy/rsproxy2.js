@@ -4,7 +4,7 @@ var net = require('net'),
     App = require('./rsproxy_app'),
     ClientHandler = require('./clienthandler');
 
-var app = new App(process.env.RS_DIR || "/tmp/rs");
+var app = new App(process.env.RS_DIR || "~/.config/rs");
 global.app = app;
 
 if (process.argv.length == 3) {
