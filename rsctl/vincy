@@ -1,0 +1,106 @@
+#!/usr/bin/env node
+
+var net = require('net'),
+    MultiplexStream = require('multiplex-stream'),
+    tls = require('tls'),
+    fs = require('fs'),
+    http = require('http'),
+    rsproto = require('rsproto'),
+    readline = require('readline'),
+    asciitable = require('ascii-table'),
+    util = require('util');
+    var spawn = require('child_process').spawn;
+  
+var Netmask = require('netmask').Netmask;
+
+
+function getUserHome() {
+  return process.env.HOME || process.env.HOMEPATH || process.env.USERPROFILE;
+}
+
+var updateURL = 'http://labs.max-weller.de/vincy-update/';
+
+var confdir = getUserHome() + '/.config/rs/vincy';
+if (!fs.existsSync(confdir)) {
+  fs.mkdirSync(getUserHome() + '/.config/');fs.mkdirSync(getUserHome() + '/.config/rs');
+  fs.mkdirSync(confdir);
+}
+
+function getHostlist() {
+  var hostlist = fs.readFileSync(confdir + '/hostlist.txt').toString().split(/\n/);
+  var hosts = [];
+  for(var i in hostlist) {
+    if (/^(#.*)?$/.test(hostlist[i])) continue;
+    var h = hostlist[i].split(/\t/);
+    hosts.push({ 'id': h[0], 'hostname': h[1], 'tunnel': h[2], 'vncport': h[3], 'vncpassword': h[4] });
+  }
+  return hosts;
+}
+function getHost(id) {
+  var hosts = getHostlist();
+  for(var i in hosts) if (hosts[i].id == id) return hosts[i];
+  return false;
+}
+
+function downloadFile(url, file, cb) {
+  http.get(url, function(response) {
+    var dat = "";
+    response.on('data', function(r) { dat += r; });
+    response.on('end', function() { fs.writeFileSync(file, dat); cb(); });
+  });
+}
+
+function runUpdate() {
+  //download hostlist.txt
+  //download ssh_client_config
+  process.stdout.write("Downloading hostlist.txt ...          ");
+  downloadFile(updateURL + '/hostlist.txt', confdir + '/hostlist.txt', function() {
+    process.stdout.write("[ ok ]\n");
+    process.stdout.write("Downloading ssh_client_conf.txt ...   ");
+    downloadFile(updateURL + '/ssh_client_conf.txt', confdir + '/ssh_client_conf.txt', function() {
+      console.log("[ ok ]");
+    });
+  });
+}
+
+function doConnect(hostId) {
+  var host = getHost(hostId);
+  var locport = 15900 + Math.floor(Math.random()*1000);
+  
+  var ssh_args = ["-F", confdir+"/ssh_client_conf.txt", "-L", locport+':'+host.hostname+':'+host.vncport, host.tunnel, "echo Tunnel connected; sleep 5"];
+  spawn("ssh", ssh_args, { stdio: 'inherit' });
+  
+  setTimeout(function() {
+    spawn("open", ['vnc://user:'+host.vncpassword+'@127.0.0.1:'+locport], { stdio: 'inherit' });
+  }, 1500);
+}
+
+function parseArgs(args, paramArgs) {
+  var boolArgs = {};
+  for(var i = 0; i < args.length; i++) {
+    var a = args[i];
+    if (a.charAt(0)=='-' && paramArgs.hasOwnProperty(a)) paramArgs[a] = args[++i];
+    else if (a.charAt(0)=='-') boolArgs[a] = boolArgs[a] ? boolArgs[a] + 1 : 1;
+    else { args = args.slice(i); break; }
+  }
+  return { named: paramArgs, bool: boolArgs, rest: args };
+}
+
+var cmdarguments = process.argv.slice(2);
+var args = parseArgs(cmdarguments, {});
+
+if (args.bool['-update']) {
+  runUpdate();
+} else if (args.bool['-list']) {
+  var hosts = getHostlist();
+  var tab = new asciitable().setHeading('ID', 'Host Name', 'Tunnel', 'VNC Port', 'VNC Passwort'); //tab.removeBorder();
+  for(var i in hosts) {
+    var c = hosts[i];
+    tab.addRow(c.id, c.hostname, c.tunnel, c.vncport, c.vncpassword);
+  }
+  console.log(tab.toString());
+} else {
+  doConnect(args.rest[0]);
+}
+
+

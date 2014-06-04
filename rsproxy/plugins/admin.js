@@ -14,6 +14,18 @@ module.exports = { pluginName: "admin", pluginVersion: "0.0.1", pluginConnect: f
     });
     
     handler.messenger["admin:get_hosts"] = function(type, data, next) {
+      App.db.Certificate.all().success(function(result) {
+        var hosts = [];
+        for (var i in results) {
+          hosts.push(results[i]);
+        }
+        next(null, hosts);
+      }).error(function(err) {
+        next(err, null);
+      });
+    };
+    
+    handler.messenger["admin:get_connections"] = function(type, data, next) {
       var hosts = [];
       for (var i in app.connections) {
         var host = app.connections[i];

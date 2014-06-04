@@ -13,7 +13,7 @@ var Netmask = require('netmask').Netmask;
 
 var screen = blessed.screen();
 
-var configDir = process.env.RS_DIR || "~/.config/rs";
+var configDir = process.env.RS_DIR || rsproto.getUserHome() + "/.config/rs";
 var config = rsproto.loadConfig(configDir + '/config.json');
 
 var serverHost = process.env.RS_HOST || config.proxy_host || "127.0.0.1";

@@ -17,6 +17,17 @@ var Certificate = sequelize.define('User', {
   fingerprint: Sequelize.STRING,
   hostName: Sequelize.STRING,
   physicalLocation: Sequelize.STRING,
+  sshHostName: Sequelize.STRING,
+  comment: Sequelize.STRING
+});
+
+var VncHosts = sequelize.define('VncHosts', {
+  id: { type: Sequelize.INTEGER, primaryKey: true, autoIncrement: true },
+  name: Sequelize.STRING,
+  hostname: Sequelize.STRING,
+  port: Sequelize.STRING,
+  password: Sequelize.STRING,
+  tunnelId: Sequelize.STRING,
   comment: Sequelize.STRING
 });
 
@@ -26,6 +37,7 @@ var ManagedHosts = sequelize.define('ManagedHosts', {
 })
 
 Certificate.hasMany(Certificate, { through: ManagedHosts });
+Certificate.hasMany(VncHosts);
 
 var CSR = sequelize.define('CSR', {
   id: { type: Sequelize.INTEGER, primaryKey: true, autoIncrement: true },

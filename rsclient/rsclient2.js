@@ -8,7 +8,7 @@ var net = require('net'),
     readline = require('readline');
 var Netmask = require('netmask').Netmask;
 
-var configDir = process.env.RS_DIR || "/tmp/rs";
+var configDir = process.env.RS_DIR || rsproto.getUserHome() + "/.config/rs";
 var config = rsproto.loadConfig(configDir + '/config.json');
 
 var serverHost = process.env.RS_HOST || config.proxy_host || "127.0.0.1";

@@ -8,6 +8,7 @@
     <script type="text/javascript" src="extjs/ext-theme-classic.js"></script>
     <script src="jquery-1.10.2.min.js"></script>
     <script src="rsmanager.js"></script>
+    <script src="server_msgs.js"></script>
     <script src="gui.js"></script>
     <style>
       @import url(finder-sidebar.css);
@@ -102,20 +103,17 @@
         //
       }
       
-      function refreshHosts() {
-        App.conn.sendMessage('admin:get_hosts', '', function(err, hosts) {
-          App.debug("HOSTS RECV.", hosts)
-          var grid = Ext.getCmp('hostsGrid');
-          grid.store.loadData(hosts);
-        });
-      }
-      
       async.parallel([Ext.onReady, function(next) { App.conn.on('connected', next); }], function(err) {
         App.debug("READY AND CONNECTED")
-        refreshHosts();
+        
         App.conn.on('msg:event:on_hosts_changed', refreshHosts);
         App.conn.sendMessage('hello:who_am_i', '', function(err, results) {
           App.debug("Connection Info: ", util.inspect(results));
+					if (results.auth != 'admin') {
+						App.debug("ERROR: You're not connected as admin!");
+					} else {
+						refreshHosts();
+					}
         });
       });
       

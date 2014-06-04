@@ -4,7 +4,11 @@ var net = require('net'),
     App = require('./rsproxy_app'),
     ClientHandler = require('./clienthandler');
 
-var app = new App(process.env.RS_DIR || "~/.config/rs");
+function getUserHome() {
+  return process.env.HOME || process.env.HOMEPATH || process.env.USERPROFILE;
+}
+
+var app = new App(process.env.RS_DIR || getUserHome() + "/.config/rs");
 global.app = app;
 
 if (process.argv.length == 3) {

@@ -4,10 +4,10 @@ var fs = require('fs'),
 var Netmask = require('netmask').Netmask;
 
 function App(configDir) {
+    this.configDir = configDir;
     this.connections = [];
     this.plugins = [];
-    this.db = require('./database');
-    this.configDir = configDir;
+    this.db = require('./database')(this);
     
     try {
       this.config = JSON.parse(fs.readFileSync(this.configDir+'/config.json').toString().replace(/^\s*\/\/.*$/gm,""));

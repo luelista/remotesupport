@@ -11,7 +11,7 @@ var net = require('net'),
     util = require('util');
 var Netmask = require('netmask').Netmask;
 
-var configDir = process.env.RS_DIR || "~/.config/rs";
+var configDir = process.env.RS_DIR || rsproto.getUserHome() + "/.config/rs";
 var config = rsproto.loadConfig(configDir + '/config.json');
 
 var serverHost = process.env.RS_HOST || config.proxy_host || "127.0.0.1";
@@ -21,7 +21,7 @@ var certCountry = config.certificate_country || "DE",
     certState = config.certificate_state || "",
     certOrganization = config.certificate_organization || "Acme Remote Support";
 
-var args = process.argv.slice(2);
+
 var conn = null;
 
 //==> Helper
@@ -63,9 +63,10 @@ rsctl keygen <hostname> [admin]\n\n";
   console.log(helpText);
 }
 
-function generateKeys() {
+function generateKeys(args) {
   var ou = "Remote Support";
-  if (args.length > 2 && args[2] == "admin") {
+  args = parseArgs(args, {});
+  if (args.bool.admin) {
     ou = config.adminOU;
   }
   pem.createCSR({
@@ -74,7 +75,7 @@ function generateKeys() {
     state: certState,
     organization: certOrganization,
     organizationUnit: ou,
-    commonName: args[1]
+    commonName: args.rest[0]
   }, function(error, result) {
     if (error) {
       console.log(error);
@@ -107,7 +108,7 @@ function generateKeys() {
   });
 }
 
-function generateServerKey() {
+function generateServerKey(args) {
   var ou = "Remote Support";
   try{ fs.mkdirSync(configDir+"/ca"); }catch(e) {}
   try{ fs.mkdirSync(configDir+"/default-admin"); }catch(e) {}
@@ -126,7 +127,7 @@ function generateServerKey() {
     state: certState,
     organization: certOrganization,
     organizationUnit: ou,
-    commonName: args[1],
+    commonName: args[0],
     serviceKey: fs.readFileSync(caKey),
     serviceCertificate: fs.readFileSync(caCert),
     serial: 10001
@@ -165,7 +166,7 @@ function generateServerKey() {
   });
 }
 
-function fetchCA() {
+function fetchCA(args) {
   connect();
   conn.on('connected', function() {
     conn.sendMessage("read_certs:read_ca_cert", {}, function(err, data) {
@@ -181,7 +182,7 @@ function fetchCA() {
   })
 }
 
-function testConnection() {
+function testConnection(args) {
   connect();
   conn.on('connected', function() {
     conn.sendMessage("hello:who_am_i", {world:"!"}, function(err, data) {
@@ -194,7 +195,20 @@ function testConnection() {
   })
 }
 
-function manageCSR() {
+function sendMessage(args) {
+  connect();
+  conn.on('connected', function() {
+    conn.sendMessage(args[0], {}, function(err, data) {
+      if (err) console.log("ERROR: ",err);
+      for(var k in data) {
+        console.log(k, ': ', data[k]);
+      }
+      conn.close();
+    });
+  })
+}
+
+function manageCSR(args) {
   connect();
   conn.on('connected', function() {
     conn.on('msg:read_certs:on_new_csr', function(d) {
@@ -253,8 +267,8 @@ function manageCSR() {
         else if (cmd.match(/^[0-9]+$/)) { sel = +cmd; cmds.detail(next); }
         else { console.log("invalid command. possible commands: list, detail, <id>, accept, reject, exit "); act = true; next(); }
       }
-      if (args.length > 1) {
-        for (var i = 1; i<args.length; i++)
+      if (args.length > 0) {
+        for (var i = 0; i<args.length; i++)
           doo(args[i], function() {});
         if (act) { conn.close(); rl.close(); return; }
       }
@@ -270,7 +284,7 @@ function manageCSR() {
   });
 }
 
-function listHosts() {
+function listHosts(args) {
   connect();
   conn.on('connected', function() {
     conn.sendMessage("admin:get_hosts", {}, function(err, hosts) {
@@ -285,14 +299,14 @@ function listHosts() {
   });
 }
 
-function createForwardIn() {
+function createForwardIn(args) {
   connect();
   var lfd_nr = 1;
   conn.on('msg:on_forward_error', function(errMes) {
     console.log("ERROR:",errMes);
   });
   conn.on('connected', function() {
-    var id = +args[1], localPort = +args[2], remotePort = +args[3], remoteHost = args[4] || "127.0.0.1";
+    var id = +args[0], localPort = +args[1], remotePort = +args[2], remoteHost = args[3] || "127.0.0.1";
     if (!id || !localPort || !remotePort) { displayHelp(); return; }
     var server = net.createServer(function(stream) {
       var upstream = conn.multiplex.connect({
@@ -309,7 +323,7 @@ function createForwardIn() {
 }
 
 
-function doConfiguration() {
+function doConfiguration(args) {
   var config = '\n\
 {\n\
   "server_port": %s,\n\
@@ -357,16 +371,16 @@ function doConfiguration() {
   askNext();
 }
 
-function execRemoteCommand() {
+function execRemoteCommand(args) {
   connect();
   var lfd_nr = 1;
   conn.on('msg:on_forward_error', function(errMes) {
     console.log("ERROR:",errMes);
   });
   conn.on('connected', function() {
-    var id = +args[1], cmd = args[2];
+    var id = +args[0], cmd = args[1];
     if (!id || !cmd) { displayHelp(); return; }
-    conn.createTunnel(id, { type: 'exec', cmd: cmd, args: args.slice(3) }, function(upstream) {
+    conn.createTunnel(id, { type: 'exec', cmd: cmd, args: args.slice(2) }, function(upstream) {
       process.stdin.pipe(upstream);
       upstream.pipe(process.stdout);
       //console.log("forward stream created");
@@ -382,33 +396,48 @@ function execRemoteCommand() {
   });
 }
 
-function serverRun(state) {
+function serverRun(state, args) {
   
 }
 
+function parseArgs(args, paramArgs) {
+  var boolArgs = {};
+  for(var i = 0; i < args.length; i++) {
+    var a = args[i];
+    if (a.charAt(0)=='-' && paramArgs.hasOwnProperty(a)) paramArgs[a] = args[++i];
+    else if (a.charAt(0)=='-') boolArgs[a] = boolArgs[a] ? boolArgs[a] + 1 : 1;
+    else { args = args.slice(i); break; }
+  }
+  return { named: paramArgs, bool: boolArgs, rest: args };
+}
 
 function dispatcher() {
-  switch(args[0] || "") {
+  var command = process.argv[2] || "";
+  var args = process.argv.slice(3);
+  switch(command) {
   case "keygen":
-    generateKeys();
+    generateKeys(args);
     break;
   case "configure":
-    doConfiguration();
+    doConfiguration(args);
     break;
   case "testcon":
-    testConnection();
+    testConnection(args);
+    break;
+  case "sendmessage":
+    sendMessage(args);
     break;
   case "hosts":
-    listHosts();
+    listHosts(args);
     break;
   case "fetchca":
-    fetchCA();
+    fetchCA(args);
     break;
   case "mancsr":
-    manageCSR();
+    manageCSR(args);
     break;
   case "serverkeygen":
-    generateServerKey();
+    generateServerKey(args);
     break;
   case "serverstart":
     serverRun(true);
@@ -417,10 +446,10 @@ function dispatcher() {
     serverRun(false);
     break;
   case "forward":
-    createForwardIn();
+    createForwardIn(args);
     break;
   case "exec":
-    execRemoteCommand();
+    execRemoteCommand(args);
     break;
   default:
     displayHelp();
